@@ -1,0 +1,357 @@
+package com.lenerd.spotifyplus.module;
+
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.res.AssetManager;
+import android.content.res.Resources;
+import android.content.res.loader.ResourcesLoader;
+import android.content.res.loader.ResourcesProvider;
+import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.net.ConnectivityManager;
+import android.os.ParcelFileDescriptor;
+import android.util.Log;
+import android.util.Pair;
+import android.view.ContextThemeWrapper;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import com.lenerd.spotifyplus.R;
+import com.lenerd.spotifyplus.module.entities.SpotifyTrack;
+import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.query.FindField;
+import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.matchers.FieldMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.lang.ref.WeakReference;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public final class Utils {
+    private static Resources mergedResources;
+    private static Context wrappedContext;
+    private static Typeface cachedTypeface;
+    public static String token;
+
+    public static DexKitBridge bridge;
+
+    private static final Pattern DIGITS = Pattern.compile("\\d+");
+    public static Object playerState;
+    private static Method hasTrackMethod;
+    private static Method getContextTrack;
+    public static Object playerStateWrapper;
+
+    public static WeakReference<Pair<String, String>> currentContextTrack;
+
+    //region Loading Resources
+
+    public static View inflate(Context context, int layoutId, ViewGroup parent) {
+        if (context == null) return null;
+
+        try {
+            ensureModuleResources(context);
+
+            if (mergedResources == null || wrappedContext == null) {
+                Log.e("SpotifyPlus", "Failed to merge resources");
+                return null;
+            }
+
+            LayoutInflater inflater = LayoutInflater.from(context.getApplicationContext()).cloneInContext(wrappedContext);
+            return inflater.inflate(layoutId, parent, false);
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    public static View inflate(Context context, String layoutName, ViewGroup parent) {
+        if (context == null) return null;
+
+        try {
+            ensureModuleResources(context);
+
+            if (mergedResources == null || wrappedContext == null) {
+                Log.e("SpotifyPlus", "Failed to merge resources");
+                return null;
+            }
+
+            LayoutInflater inflater = LayoutInflater.from(context.getApplicationContext()).cloneInContext(wrappedContext);
+            return inflater.inflate(mergedResources.getLayout(mergedResources.getIdentifier(layoutName, "layout", "com.lenerd.spotifyplus")), parent, false);
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    public static String getString(Context context, int stringId, Object... formatArgs) {
+        if(context == null) return null;
+
+        try {
+            ensureModuleResources(context);
+
+            if(mergedResources == null || wrappedContext == null) {
+                Log.e("SpotifyPlus", "Failed to merge resources");
+                return null;
+            }
+
+            if(formatArgs != null && formatArgs.length > 0) {
+                return mergedResources.getString(stringId, formatArgs);
+            } else {
+                return mergedResources.getString(stringId);
+            }
+        } catch(Exception e) {
+            Log.e("SpotifyPlus", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    public static Drawable getDrawable(Context context, int drawableId) {
+        if(context == null) return null;
+
+        try {
+            ensureModuleResources(context);
+
+            if(mergedResources == null || wrappedContext == null) {
+                Log.e("SpotifyPlus", "Failed to merge resources");
+                return null;
+            }
+
+            return mergedResources.getDrawable(drawableId);
+        } catch(Exception e) {
+            Log.e("SpotifyPlus", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private static void ensureModuleResources(Context context) throws Exception {
+        if (mergedResources != null && wrappedContext != null) return;
+
+        File moduleApk = new File(SpotifyLoader.MODULE_APK_PATH);
+        if (!moduleApk.exists()) {
+            Log.e("SpotifyPlus", "Could not find APK path!");
+            return;
+        }
+
+        ParcelFileDescriptor pfd = ParcelFileDescriptor.open(moduleApk, ParcelFileDescriptor.MODE_READ_ONLY);
+        ResourcesProvider provider = ResourcesProvider.loadFromApk(pfd);
+
+        ResourcesLoader loader = new ResourcesLoader();
+        loader.addProvider(provider);
+
+        Resources hostRes = context.getApplicationContext().getResources();
+        Resources res = new Resources(hostRes.getAssets(), hostRes.getDisplayMetrics(), hostRes.getConfiguration());
+        res.addLoaders(loader);
+
+//        mergedResources = res;
+//        Context moduleContext = new ModuleResourceContext(context.getApplicationContext(), mergedResources, SpotifyLoader.class.getClassLoader());
+//        wrappedContext = new ContextThemeWrapper(moduleContext, R.style.Theme_SpotifyPlus);
+
+        mergedResources = ModuleContextWrapper.createMergedResources(context.getApplicationContext(), SpotifyLoader.MODULE_APK_PATH);
+        wrappedContext = new ModuleContextWrapper(context.getApplicationContext(), R.style.Theme_SpotifyPlus, mergedResources, ModuleContextWrapper.class.getClassLoader());
+    }
+
+    public static Typeface loadTypeface(Context context, String font) {
+        if (cachedTypeface != null) return cachedTypeface;
+        if (context == null) return null;
+
+        InputStream in;
+        FileOutputStream out;
+
+        try {
+            ClassLoader classLoader = SpotifyLoader.class.getClassLoader();
+            if (classLoader == null) {
+                Log.e("SpotifyPlus", "Could not find SpotifyLoader class");
+                return null;
+            }
+
+            in = classLoader.getResourceAsStream("fonts/" + font);
+
+            if (in == null) {
+                Log.e("SpotifyPlus", "Could not find font " + font);
+                return null;
+            }
+
+            File outFile = new File(context.getCacheDir(), font);
+
+            if (!outFile.exists() || outFile.length() == 0) {
+                out = new FileOutputStream(outFile, false);
+
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+
+                out.flush();
+            }
+
+            cachedTypeface = new Typeface.Builder(outFile).build();
+            return cachedTypeface;
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", e.getMessage());
+            return null;
+        }
+    }
+
+    //endregion
+
+    //region Spotify Playback
+
+    public static SpotifyTrack getTrack(ClassLoader classLoader) {
+        if (playerState == null) return null;
+
+        try {
+            Method getTrackMethod = playerState.getClass().getMethod("track");
+            Object wrapper = getTrackMethod.invoke(playerState);
+            if (wrapper == null) return null;
+
+            if (hasTrackMethod == null)
+                hasTrackMethod = bridge.findMethod(FindMethod.create().searchInClass(Collections.singletonList(bridge.getClassData(wrapper.getClass()))).matcher(MethodMatcher.create().paramCount(0).returnType(boolean.class))).get(0).getMethodInstance(classLoader);
+
+            Object hasTrack = hasTrackMethod.invoke(wrapper);
+            if (hasTrack == null) return null;
+
+            if ((Boolean) hasTrack) {
+                if (getContextTrack == null)
+                    getContextTrack = bridge.findMethod(FindMethod.create().searchInClass(Collections.singletonList(bridge.getClassData(wrapper.getClass()))).matcher(MethodMatcher.create().paramCount(0).returnType(Object.class))).get(0).getMethodInstance(classLoader);
+
+                Object ct = getContextTrack.invoke(wrapper);
+                if (ct == null) return null;
+
+                Class<?> contextClass = Class.forName("com.spotify.player.model.ContextTrack", false, classLoader);
+                if (contextClass.isInstance(ct)) {
+                    Object track = contextClass.cast(ct);
+
+                    Method uriMethod = track.getClass().getMethod("uri");
+                    String uri = (String) uriMethod.invoke(track);
+
+                    Method metadataMethod = track.getClass().getMethod("metadata");
+                    Map<String, String> metadata = (Map<String, String>) metadataMethod.invoke(track);
+                    if (metadata == null) return null;
+
+                    String title = metadata.get("title");
+                    String artist = metadata.get("artist_name");
+                    String album = metadata.get("album_title");
+                    String color = metadata.get("extracted_color");
+                    String imageId = metadata.get("image_large_url");
+                    long position = 0;
+                    long timestamp = 0;
+                    boolean saved = false;
+                    if (metadata.containsKey("collection.in_collection")) {
+                        String savedValue = metadata.get("collection.in_collection");
+                        saved = Boolean.parseBoolean(savedValue);
+                    }
+
+                    Method positionMethod = playerState.getClass().getMethod("positionAsOfTimestamp");
+                    Object posOpt = positionMethod.invoke(playerState);
+                    if (posOpt == null) {
+                        return new SpotifyTrack(title, artist, album, uri, -1, color, -1, imageId, -1, saved);
+                    }
+
+                    Matcher m = DIGITS.matcher(posOpt.toString());
+                    if (m.find()) {
+                        long basePos = Long.parseLong(m.group());
+                        timestamp = (Long) playerState.getClass().getMethod("timestamp").invoke(playerState);
+                        position = basePos + (System.currentTimeMillis() - timestamp);
+                    }
+
+                    return new SpotifyTrack(title, artist, album, uri, position, color, timestamp, imageId, 0, saved);
+                }
+            }
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", e.getMessage(), e);
+            return null;
+        }
+
+        return null;
+    }
+
+    public static long getCurrentPlaybackPosition() {
+        if (playerStateWrapper == null) return -1;
+
+        Object state;
+        try {
+            state = playerStateWrapper.getClass().getMethod("getState").invoke(playerStateWrapper);
+            if (state == null) return -1;
+
+            var progressList = bridge.findField(FindField.create().searchInClass(Collections.singletonList(bridge.getClassData(state.getClass()))).matcher(FieldMatcher.create().type(long.class)));
+            if (progressList.isEmpty()) return -1;
+
+            return progressList.get(0).getFieldInstance(state.getClass().getClassLoader()).getLong(state);
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", e.getMessage(), e);
+            return -1;
+        }
+    }
+
+    //endregion
+
+    private static final class ModuleResourceContext extends ContextWrapper {
+        private final Resources resources;
+        private final ClassLoader classLoader;
+
+        ModuleResourceContext(Context base, Resources resources, ClassLoader classLoader) {
+            super(base);
+            this.resources = resources;
+            this.classLoader = classLoader;
+        }
+
+        @Override
+        public Resources getResources() {
+            return resources;
+        }
+
+        @Override
+        public AssetManager getAssets() {
+            return resources.getAssets();
+        }
+
+        @Override
+        public ClassLoader getClassLoader() {
+            return classLoader != null ? classLoader : super.getClassLoader();
+        }
+    }
+
+    public static class ModuleContextWrapper extends android.view.ContextThemeWrapper {
+        private final Resources res;
+        private final AssetManager am;
+        private final ClassLoader cl;
+
+        public ModuleContextWrapper(Context base, int themeResId, Resources moduleRes, ClassLoader moduleCl) {
+            super(base, themeResId);
+
+            this.res = moduleRes;
+            this.am = moduleRes.getAssets();
+            this.cl = moduleCl;
+        }
+
+        @Override public Resources getResources() { return res; }
+        @Override public AssetManager getAssets() { return am; }
+        @Override public ClassLoader getClassLoader() { return cl; }
+
+        public static Resources createMergedResources(Context hostContext, String... apkPaths) throws Exception {
+            AssetManager mergedAm = AssetManager.class.getDeclaredConstructor().newInstance();
+
+            Method addAssetPath = AssetManager.class.getMethod("addAssetPath", String.class);
+            boolean any = false;
+            for(String p : apkPaths) {
+                int cookie = (Integer) addAssetPath.invoke(mergedAm, p);
+                if(cookie != 0) any = true;
+            }
+
+            if(!any) {
+                throw new IllegalStateException("None of the provided asset paths were added successfully");
+            }
+
+            Resources host = hostContext.getResources();
+            return new Resources(mergedAm, host.getDisplayMetrics(), host.getConfiguration());
+        }
+    }
+}

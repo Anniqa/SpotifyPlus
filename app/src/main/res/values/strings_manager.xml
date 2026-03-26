@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_title">Spotify Plus</string>
+    <string name="home_subtitle">Manager</string>
+
+    <string name="home_spotify_installed">Spotify is installed</string>
+    <string name="home_spotify_not_installed">Spotify is not installed</string>
+    <string name="home_spotify_version_format">%1$s</string>
+    <string name="home_spotify_version_unknown">Unknown</string>
+
+    <string name="home_quick_actions_title">Quick Actions</string>
+    <string name="home_refresh_hook_status">Refresh Hook Status</string>
+    <string name="home_check_for_updates">Check for Updates</string>
+    <string name="home_enable_all_hooks">Enable All Hooks</string>
+    <string name="home_disable_all_hooks">Disable All Hooks</string>
+
+    <string name="home_overview_title">Overview</string>
+    <string name="home_package_label">Package</string>
+    <string name="home_enabled_items_label">Enabled items</string>
+    <string name="home_enabled_items_format">%1$d/%2$d enabled</string>
+    <string name="home_hook_status_label">Hook status</string>
+    <string name="home_manage_hooks">Manage Hooks</string>
+    <string name="home_open_updates">Open Updates</string>
+
+    <string name="home_about_title">About</string>
+    <string name="home_about_description">SpotifyPlus enhances the Spotify app with additional features and hook-based customizations.</string>
+</resources>

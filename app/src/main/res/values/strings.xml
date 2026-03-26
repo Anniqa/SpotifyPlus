@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">Spotify Plus</string>
+    <string name="app_desc">Unlock the full power of your Spotify app</string>
+
+    <string name="album_cover_desc">Album cover</string>
+    <string name="written_by">Written by: %1$s</string>
+    <string name="lastfm_info">Currently set to %1$s</string>
+    <string name="open_last_fm">Open in Last.fm</string>
+    <string name="settings_label">Spotify Plus Settings</string>
+    <string name="update_modal_compare">Current: v%1$s  •  Latest: v%2$s</string>
 </resources>

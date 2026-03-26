@@ -1,0 +1,193 @@
+package com.lenerd.spotifyplus.module.hooks;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
+import android.net.Uri;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import com.google.android.material.button.MaterialButton;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.lenerd.spotifyplus.BuildConfig;
+import com.lenerd.spotifyplus.R;
+import com.lenerd.spotifyplus.module.SpotifyHook;
+import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
+import com.lenerd.spotifyplus.module.Utils;
+import io.github.libxposed.api.XposedInterface;
+import io.github.libxposed.api.annotations.BeforeInvocation;
+import io.github.libxposed.api.annotations.XposedHooker;
+import okhttp3.Call;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import org.jetbrains.annotations.NotNull;
+import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.lenerd.spotifyplus.module.Utils.bridge;
+
+@XposedHooker
+public class NetworkHook extends SpotifyHook {
+    private static final Pattern LEADING_NUMBER = Pattern.compile("^(\\d+)");
+
+    @Override
+    protected void hookSetup() throws NoSuchMethodException {
+        Method httpRequest = bridge.findMethod(FindMethod.create().searchInClass(Collections.singletonList(bridge.getClassData(findClass("okhttp3.Request$Builder")))).matcher(MethodMatcher.create().returnType(void.class).paramTypes(String.class, String.class))).get(1).getMethodInstance(classLoader);
+        hook(httpRequest);
+
+        hook(findClass("com.spotify.music.SpotifyMainActivity").getDeclaredMethod("onCreate", Bundle.class));
+    }
+
+    @BeforeInvocation
+    public static void beforeHook(XposedInterface.BeforeHookCallback callback) {
+        if (callback.getMember().getName().equals("onCreate")) {
+            // I know this doesn't really fit, but I'm not sure where else to put it. I'm not creating an entire new class just for this
+            loadPreferences((Activity) callback.getThisObject());
+            SpotifyHook.currentActivity = (Activity) callback.getThisObject();
+
+            // Checking for updates is kind of a network thing, right?
+            checkForUpdates((Activity) callback.getThisObject());
+            return;
+        }
+
+        String headerName = (String) callback.getArgs()[0];
+        String headerValue = (String) callback.getArgs()[1];
+
+        if (headerName != null && headerName.equalsIgnoreCase("authorization") && headerValue != null && !headerValue.isEmpty()) {
+            Utils.token = headerValue.replace("Bearer", "").trim();
+        }
+    }
+
+    private static void loadPreferences(Activity activity) {
+        SharedPreferences prefs = activity.getSharedPreferences("SpotifyPlus", Context.MODE_PRIVATE);
+
+        // General
+        SpotifyPlusSettings.checkForUpdates = prefs.getBoolean("general_check_updates", true);
+        SpotifyPlusSettings.removeCreateButton = prefs.getBoolean("remove_create", false);
+        SpotifyPlusSettings.lastfmUsername = prefs.getString("last_fm_username", "null");
+        SpotifyPlusSettings.startupPage = SpotifyPlusSettings.StartupPage.valueOf(prefs.getString("startup_page", "HOME"));
+        Log.d("SpotifyPlus", SpotifyPlusSettings.startupPage + " | " + prefs.getString("startup_page", "HOME"));
+
+        // Lyrics
+        SpotifyPlusSettings.animationStyle = SpotifyPlusSettings.AnimationStyle.valueOf(prefs.getString("lyric_animation_style", "DEFAULT"));
+        SpotifyPlusSettings.userSelectedFont = SpotifyPlusSettings.LyricsFont.valueOf(prefs.getString("lyrics_font", "APPLE"));
+        SpotifyPlusSettings.interludeDuration = SpotifyPlusSettings.InterludeDuration.valueOf(prefs.getString("lyric_interlude_duration", "SPOTIFY_PLUS"));
+        SpotifyPlusSettings.lineSpacing = SpotifyPlusSettings.LineSpacing.valueOf(prefs.getString("lyric_spacing", "DEFAULT"));
+        SpotifyPlusSettings.backgroundQuality = SpotifyPlusSettings.BackgroundQuality.valueOf(prefs.getString("lyric_background_quality", "HIGH"));
+        SpotifyPlusSettings.enabledBackground = prefs.getBoolean("lyric_enable_background", true);
+        SpotifyPlusSettings.lineGradient = prefs.getBoolean("lyric_enable_line_gradient", true);
+    }
+
+    private static void checkForUpdates(Activity activity) {
+        if (!SpotifyPlusSettings.checkForUpdates) return;
+
+        ConnectivityManager connectivityManager = (ConnectivityManager) activity.getSystemService(Context.CONNECTIVITY_SERVICE);
+        var capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.getActiveNetwork());
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return;
+
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder().url("https://api.github.com/repos/lenerd46/spotifyplus/releases/latest").build();
+
+        client.newCall(request).enqueue(new okhttp3.Callback() {
+            @Override
+            public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    Log.e("SpotifyPlus", "Failed to check for updates | " + response.code() + " | ");
+                    return;
+                }
+
+                String content = response.body().string();
+                if (content.isEmpty()) return;
+
+                JsonObject json = new JsonParser().parseString(content).getAsJsonObject();
+                String latest = json.get("tag_name").getAsString().replace("v", "");
+
+                String l = latest.substring(1);
+                String c = BuildConfig.VERSION_NAME;
+
+                boolean updateAvailable = false;
+
+                String[] la = l.split("\\.");
+                String[] ca = c.split("\\.");
+
+                int len = Math.max(la.length, ca.length);
+                for (int i = 0; i < len; i++) {
+                    long lv = i < la.length ? parseSegment(la[i]) : 0L;
+                    long cv = i < ca.length ? parseSegment(ca[i]) : 0L;
+
+                    if (lv > cv) {
+                        updateAvailable = true;
+                        break;
+                    } else if (lv < cv) {
+                        break;
+                    }
+                }
+
+                if (updateAvailable) {
+                    activity.runOnUiThread(() -> {
+                        ViewGroup root = (ViewGroup) activity.getWindow().getDecorView();
+                        if(root == null) return;
+
+                        View updateModal = Utils.inflate(activity, R.layout.update_view, root);
+                        root.addView(updateModal);
+
+                        FrameLayout background = updateModal.findViewById(R.id.update_popup_root);
+                        TextView versionText = updateModal.findViewById(R.id.update_popup_version);
+                        MaterialButton updateButton = updateModal.findViewById(R.id.btn_download_update);
+                        MaterialButton dismissButton = updateModal.findViewById(R.id.btn_dismiss_update);
+
+                        versionText.setText(Utils.getString(activity, R.string.update_modal_compare, BuildConfig.VERSION_NAME, latest));
+
+                        background.setOnClickListener(layout -> {
+                            root.removeView(updateModal);
+                        });
+
+                        updateButton.setOnClickListener(v -> {
+                            root.removeView(updateModal);
+
+                            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/LeNerd46/SpotifyPlus/releases"));
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            activity.startActivity(intent);
+                        });
+
+                        dismissButton.setOnClickListener(v -> root.removeView(updateModal));
+                    });
+                }
+            }
+
+            @Override
+            public void onFailure(@NotNull Call call, @NotNull IOException e) {
+                Log.e("SpotifyPlus", "Failed to check for updates");
+            }
+        });
+    }
+
+    private static long parseSegment(String seg) {
+        seg = seg.trim();
+        Matcher m = LEADING_NUMBER.matcher(seg);
+        if (m.find()) {
+            try {
+                return Long.parseLong(m.group(1));
+            } catch (NumberFormatException e) {
+                // extremely large number; fallback
+                return 0L;
+            }
+        }
+        return 0L;
+    }
+}
