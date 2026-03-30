@@ -18,6 +18,18 @@ android {
         vectorDrawables.useSupportLibrary = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags("")
+                arguments("-DANDROID_STL=c++_shared")
+                targets("native-lib", "spotifyplus_bridge")
+            }
+        }
+
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -26,18 +38,55 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+
     kotlin {
         jvmToolchain(21)
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("libnode/bin/", "$buildDir/generated/jniLibs")
+        }
+    }
+
     buildFeatures {
         buildConfig = true
         compose = true
     }
 }
+
+val copySpotifyPlusBridge by tasks.registering(Copy::class) {
+    val abis = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+
+    dependsOn("externalNativeBuildDebug")
+
+    abis.forEach { abi ->
+        from(fileTree("$projectDir/.cxx") {
+            include("**/$abi/libspotifyplus_bridge.so")
+        })
+        into("$buildDir/generated/jniLibs/$abi")
+    }
+}
+
+tasks.matching { it.name == "mergeDebugJniLibFolders" }.configureEach {
+    dependsOn(copySpotifyPlusBridge)
+}
+
+//tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
+//    dependsOn(copySpotifyPlusBridge)
+//}
 
 dependencies {
 

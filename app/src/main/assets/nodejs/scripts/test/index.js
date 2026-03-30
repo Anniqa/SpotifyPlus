@@ -1,0 +1,1 @@
+SpotifyPlus.log("Hello, I am so cool!");

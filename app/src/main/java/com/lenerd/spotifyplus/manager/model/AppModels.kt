@@ -1,5 +1,7 @@
 package com.lenerd.spotifyplus.manager.model
 
+import com.lenerd.spotifyplus.BuildConfig
+
 enum class HookStatus {
     HOOKED,
     NOT_HOOKED,
@@ -39,7 +41,7 @@ data class ManagerUiState(
     val theme: AppTheme = AppTheme.AMOLED,
     val generalSettings: List<HookItem> = emptyList(),
     val updateInfo: UpdateInfo = UpdateInfo(
-        currentVersion = "0.10.0.0",
+        currentVersion = BuildConfig.VERSION_NAME,
         latestVersion = "0.6.1",
         updateAvailable = false,
         changelog = emptyList()

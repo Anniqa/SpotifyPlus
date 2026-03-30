@@ -1,0 +1,12 @@
+{
+    "name": "spotifyplus-node-loader",
+    "private": true,
+    "type": "commonjs",
+    "scripts": {
+        "build": "tsc -p tsconfig.json"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2",
+        "typescript": "^5.7.2"
+    }
+}

@@ -201,3 +201,5 @@ README.html
 .exercism
 /app/release
 /.gradle
+/app/.cxx
+/app/src/main/assets/nodejs-src/node_modules

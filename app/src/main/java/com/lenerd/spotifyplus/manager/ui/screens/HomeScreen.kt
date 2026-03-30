@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.lenerd.spotifyplus.BuildConfig
 import com.lenerd.spotifyplus.R
 import com.lenerd.spotifyplus.manager.model.ManagerUiState
 
@@ -42,16 +44,20 @@ fun HomeScreen(
     onCheckForUpdates: () -> Unit,
     onEnableAllHooks: () -> Unit,
     onDisableAllHooks: () -> Unit,
-    onOpenHooks: () -> Unit,
-    onOpenUpdates: () -> Unit
+    onOpenGithub: () -> Unit,
+    onOpenUpdate: () -> Unit,
+    onNodeTest: () -> Unit
 ) {
     val spotifyInstalled = state.isSpotifyInstalled
     val spotifyVersion = state.spotifyVersionName ?: stringResource(R.string.home_spotify_version_unknown)
     val enabledHooks = state.generalSettings.count { it.enabled }
-    val installedContainerColor = if (spotifyInstalled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-    val installedContentColor = if (spotifyInstalled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+    val installedContainerColor =
+        if (spotifyInstalled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+    val installedContentColor =
+        if (spotifyInstalled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
     val installedIcon = if (spotifyInstalled) Icons.Filled.CheckCircle else Icons.Filled.Warning
-    val installedTitle = if (spotifyInstalled) stringResource(R.string.home_spotify_installed) else stringResource(R.string.home_spotify_not_installed)
+    val installedTitle =
+        if (spotifyInstalled) stringResource(R.string.home_spotify_installed) else stringResource(R.string.home_spotify_not_installed)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -85,7 +91,7 @@ fun HomeScreen(
                     }
 
                     Text(
-                        text = state.updateInfo.currentVersion,
+                        text = "v" + state.updateInfo.currentVersion,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
@@ -145,57 +151,111 @@ fun HomeScreen(
             }
         }
 
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+//        item {
+//            Card(modifier = Modifier.fillMaxWidth()) {
+//                Column(modifier = Modifier.padding(16.dp)) {
+//                    Row(verticalAlignment = Alignment.CenterVertically) {
+//                        Icon(
+//                            imageVector = Icons.Filled.CheckCircle,
+//                            contentDescription = null,
+//                            tint = MaterialTheme.colorScheme.primary
+//                        )
+//
+//                        Text(
+//                            text = stringResource(R.string.home_quick_actions_title),
+//                            style = MaterialTheme.typography.titleLarge,
+//                            modifier = Modifier.padding(start = 8.dp)
+//                        )
+//                    }
+//
+//                    Spacer(modifier = Modifier.height(12.dp))
+//
+//                    Button(
+//                        onClick = onRefreshStatus,
+//                        modifier = Modifier.fillMaxWidth()
+//                    ) {
+//                        Text(stringResource(R.string.home_refresh_hook_status))
+//                    }
+//
+//                    FilledTonalButton(
+//                        onClick = onCheckForUpdates,
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .padding(top = 8.dp)
+//                    ) {
+//                        Text(stringResource(R.string.home_check_for_updates))
+//                    }
+//
+//                    OutlinedButton(
+//                        onClick = onEnableAllHooks,
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .padding(top = 8.dp)
+//                    ) {
+//                        Text(stringResource(R.string.home_enable_all_hooks))
+//                    }
+//
+//                    OutlinedButton(
+//                        onClick = onDisableAllHooks,
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .padding(top = 8.dp)
+//                    ) {
+//                        Text(stringResource(R.string.home_disable_all_hooks))
+//                    }
+//                }
+//            }
+//        }
 
-                        Text(
-                            text = stringResource(R.string.home_quick_actions_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = onRefreshStatus,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.home_refresh_hook_status))
-                    }
-
-                    FilledTonalButton(
-                        onClick = onCheckForUpdates,
+        if (state.updateInfo.updateAvailable) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenUpdate,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                ) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp)
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(stringResource(R.string.home_check_for_updates))
-                    }
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.12f),
+                                    shape = MaterialTheme.shapes.large
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
 
-                    OutlinedButton(
-                        onClick = onEnableAllHooks,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                    ) {
-                        Text(stringResource(R.string.home_enable_all_hooks))
-                    }
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 14.dp)
+                        ) {
+                            Text(
+                                text = "Update available",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
 
-                    OutlinedButton(
-                        onClick = onDisableAllHooks,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                    ) {
-                        Text(stringResource(R.string.home_disable_all_hooks))
+                            Text(
+                                text = "Version ${state.updateInfo.latestVersion} is ready to install. Tap to view update options.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -206,13 +266,13 @@ fun HomeScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Filled.Info,
+                            imageVector = Icons.Filled.Refresh,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary
                         )
 
                         Text(
-                            text = stringResource(R.string.home_overview_title),
+                            text = stringResource(R.string.home_update_title),
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.padding(start = 8.dp)
                         )
@@ -221,40 +281,40 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OverviewRow(
-                        label = stringResource(R.string.home_package_label),
-                        value = state.packageName
+                        label = stringResource(R.string.home_current_version_label),
+                        value = BuildConfig.VERSION_NAME
                     )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     OverviewRow(
-                        label = stringResource(R.string.home_enabled_items_label),
-                        value = stringResource(R.string.home_enabled_items_format, enabledHooks, state.generalSettings.size)
+                        label = stringResource(R.string.home_latest_version_label),
+                        value = "0.11.0.0"
                     )
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
-
-                    OverviewRow(
-                        label = stringResource(R.string.home_hook_status_label),
-                        value = state.statusMessage
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
-                        onClick = onOpenHooks,
+                        onClick = onCheckForUpdates,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(stringResource(R.string.home_manage_hooks))
+                        Text(stringResource(R.string.home_check_updates))
                     }
 
                     OutlinedButton(
-                        onClick = onOpenUpdates,
+                        onClick = onOpenGithub,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp)
                     ) {
-                        Text(stringResource(R.string.home_open_updates))
+                        Text(stringResource(R.string.home_open_github))
+                    }
+
+                    Button(
+                        onClick = onNodeTest,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Node Test")
                     }
                 }
             }

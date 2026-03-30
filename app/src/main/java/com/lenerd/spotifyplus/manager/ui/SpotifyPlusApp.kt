@@ -1,5 +1,6 @@
 package com.lenerd.spotifyplus.manager.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -20,31 +21,22 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.lenerd.spotifyplus.manager.ui.screens.AboutScreen
 import com.lenerd.spotifyplus.manager.ui.screens.HomeScreen
-import com.lenerd.spotifyplus.manager.ui.screens.HooksScreen
 import com.lenerd.spotifyplus.manager.ui.screens.SettingsScreen
-import com.lenerd.spotifyplus.manager.ui.screens.UpdatesScreen
 import com.lenerd.spotifyplus.manager.viewmodel.ManagerViewModel
 
 sealed class AppRoute(val route: String, val label: String) {
     data object Home : AppRoute("home", "Home")
-    data object Hooks : AppRoute("hooks", "Hooks")
-    data object Updates : AppRoute("updates", "Updates")
     data object Settings : AppRoute("settings", "Settings")
-    data object About : AppRoute("about", "Status")
 }
 
 @Composable
-fun SpotifyPlusApp(viewModel: ManagerViewModel) {
+fun SpotifyPlusApp(viewModel: ManagerViewModel, context: Context) {
     val navController = rememberNavController()
 
     val items = listOf(
         AppRoute.Home,
-        AppRoute.Hooks,
-        AppRoute.Updates,
         AppRoute.Settings,
-        AppRoute.About
     )
 
     Scaffold(
@@ -56,10 +48,7 @@ fun SpotifyPlusApp(viewModel: ManagerViewModel) {
                 items.forEach { screen ->
                     val icon = when (screen) {
                         AppRoute.Home -> Icons.Default.Home
-                        AppRoute.Hooks -> Icons.Default.Add
-                        AppRoute.Updates -> Icons.Default.Create
                         AppRoute.Settings -> Icons.Default.Settings
-                        AppRoute.About -> Icons.Default.Info
                     }
 
                     NavigationBarItem(
@@ -90,26 +79,9 @@ fun SpotifyPlusApp(viewModel: ManagerViewModel) {
                     onCheckForUpdates = viewModel::checkForUpdates,
                     onEnableAllHooks = viewModel::enableAllHooks,
                     onDisableAllHooks = viewModel::disableAllHooks,
-                    onOpenHooks = { navController.navigate(AppRoute.Hooks.route) },
-                    onOpenUpdates = { navController.navigate(AppRoute.Updates.route) }
-                )
-            }
-
-            composable(AppRoute.Hooks.route) {
-                HooksScreen(
-                    state = viewModel.uiState,
-                    onToggleHook = viewModel::toggleHook,
-                    onToggleScript = viewModel::toggleScript,
-                    onEnableAllHooks = viewModel::enableAllHooks,
-                    onDisableAllHooks = viewModel::disableAllHooks
-                )
-            }
-
-            composable(AppRoute.Updates.route) {
-                UpdatesScreen(
-                    state = viewModel.uiState,
-                    onCheckForUpdates = viewModel::checkForUpdates,
-                    onInstallUpdate = viewModel::installUpdate
+                    onOpenGithub = { viewModel.openGithub(context) },
+                    onOpenUpdate = { viewModel.openGithub(context) },
+                    onNodeTest = viewModel::nodeTest
                 )
             }
 
@@ -120,13 +92,6 @@ fun SpotifyPlusApp(viewModel: ManagerViewModel) {
                     onSetDebugLogging = viewModel::setDebugLogging,
                     onSetStartupCheck = viewModel::setStartupCheck,
                     onSetTheme = viewModel::setTheme
-                )
-            }
-
-            composable(AppRoute.About.route) {
-                AboutScreen(
-                    state = viewModel.uiState,
-                    onRefreshStatus = viewModel::refreshStatus
                 )
             }
         }
