@@ -2,6 +2,7 @@ import path from 'path';
 import { Logger } from './core/logger';
 import { HostRuntime } from './loader/host-runtime';
 import { ScriptLoader } from './loader/script-loader';
+import { PlatformData } from './core/models';
 
 const logger = new Logger('SpotifyPlusHost');
 
@@ -11,7 +12,7 @@ function resolveScriptRoots(): string[] {
     return [path.join(__dirname, 'scripts')];
 }
 
-function main(): void {
+async function main(): Promise<void> {
     logger.info(`host.ts starting, __dirname=${__dirname}`);
 
     const runtime = new HostRuntime(logger.child('Runtime'));
@@ -19,10 +20,26 @@ function main(): void {
     const scriptRoots = resolveScriptRoots();
 
     runtime.start();
+
+    logger.info('Waiting for Spotify to connect');
+    await runtime.waitForSpotifyConnecting();
+
+    logger.info('Waiting for Spotify to be ready');
+    const spotifyReady = await runtime.waitForSpotifyReady();
+
+    if (!spotifyReady) {
+        logger.warn('Spotify did not become ready in time');
+        return;
+    }
+
+    logger.info('Spotify is ready!');
+
     loader.loadFromRoots(scriptRoots);
     runtime.sendEvent('hostReady', { scriptRoots });
 
     logger.info(`Host ready with ${scriptRoots.length} scripts`);
 }
 
-main();
+main().catch(error => {
+    logger.error('Host crashed', error);
+});

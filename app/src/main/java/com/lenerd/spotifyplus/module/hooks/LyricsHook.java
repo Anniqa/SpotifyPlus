@@ -24,6 +24,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.lenerd.spotifyplus.R;
+import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.SpotifyCallback;
 import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
@@ -42,6 +43,7 @@ import io.github.libxposed.api.annotations.BeforeInvocation;
 import io.github.libxposed.api.annotations.XposedHooker;
 import okhttp3.*;
 import org.jetbrains.annotations.NotNull;
+import org.json.JSONObject;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.*;
@@ -234,6 +236,11 @@ public class LyricsHook extends SpotifyHook {
         } else if (member == getStateMethod) {
             Utils.playerStateWrapper = callback.getThisObject();
         }
+    }
+
+    @Override
+    public void handle(String id, String command, JSONObject json) {
+
     }
 
     private void renderLyrics(Activity activity, SpotifyTrack track, LinearLayout lyricsContainer, ViewGroup root) {

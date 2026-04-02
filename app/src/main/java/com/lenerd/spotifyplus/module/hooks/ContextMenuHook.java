@@ -1,6 +1,5 @@
 package com.lenerd.spotifyplus.module.hooks;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
@@ -8,16 +7,16 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.LayerDrawable;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
-import android.widget.Toast;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.lenerd.spotifyplus.R;
+import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.SpotifyCallback;
 import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
 import com.lenerd.spotifyplus.module.Utils;
+import com.lenerd.spotifyplus.module.scripting.ScriptContextMenu;
+import com.lenerd.spotifyplus.module.scripting.ScriptManager;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -27,11 +26,11 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import org.json.JSONObject;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.*;
-import org.luckypray.dexkit.result.ClassDataList;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
@@ -40,10 +39,7 @@ import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,6 +64,9 @@ public class ContextMenuHook extends SpotifyHook {
     private static Class<?> uweClass;
     private static Method iconMethod;
     private static Method replaceResourceIdMethod;
+
+    private final List<ScriptContextMenu> scriptMenus = new ArrayList<>();
+    private int idToUse = 0x7f1313b3;
 
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
@@ -132,6 +131,8 @@ public class ContextMenuHook extends SpotifyHook {
             var resourceIdClass = bridge.findClass(FindClass.create().matcher(ClassMatcher.create().usingStrings("your_library_tag_share_header_action_button")));
             replaceResourceIdMethod = bridge.findMethod(FindMethod.create().searchInClass(resourceIdClass).matcher(MethodMatcher.create().returnType(String.class))).stream().filter(x -> !x.getMethodName().equals("getDebugIdentifier")).collect(Collectors.toList()).get(0).getMethodInstance(classLoader);
             hook(replaceResourceIdMethod);
+
+            ScriptManager.registerHandler("menu", this);
         } catch (Exception e) {
             logError(e);
         }
@@ -256,13 +257,22 @@ public class ContextMenuHook extends SpotifyHook {
 
                 Object radioButton = radioButtonClass.getDeclaredConstructor(Context.class, String.class).newInstance(currentActivity, "spotifyplus_open_last_fm");
 
-                ArrayList<Object> newList = new ArrayList<>(list.size() + 1);
+                ArrayList<Object> newList = new ArrayList<>(list.size() + 1 + scriptMenus.size());
                 newList.add(radioButton);
+                // THIS IS WHERE YOU ADD BUTTONS
+                for(var menu : scriptMenus) {
+                    Object newButton = radioButtonClass.getDeclaredConstructor(Context.class, String.class).newInstance(currentActivity, menu.id);
+                    newList.add(newButton);
+                }
                 newList.addAll(list);
                 callback.getArgs()[1] = newList;
             } else if (member.getName().equals("getViewModel")) {
                 String marker = callback.getThisObject().getClass().getDeclaredField("c").get(callback.getThisObject()).toString();
-                if (!marker.equals("spotifyplus_open_last_fm")) return;
+                var thing = scriptMenus.stream().filter(x -> x.id.equals(marker)).findFirst();
+                if(thing.isEmpty()) return;
+//                if (!marker.equals("spotifyplus_open_last_fm")) return;
+                ScriptContextMenu menu = thing.get();
+                menu.resourceId = idToUse;
 
                 Object viewModel;
 
@@ -272,13 +282,10 @@ public class ContextMenuHook extends SpotifyHook {
                     if (cachedOriginalViewModel == null) return;
                     Class<?> pgf = cachedOriginalViewModel.getClass();
 
-//                    SpotifyTitleOverride.install();
-//                    SpotifyTitleOverride.overrideSpotifyStringById(0x7f1313b2, "Open in Last.fm");
-
                     Object oldTitleObject = cachedOriginalViewModel.getClass().getDeclaredField("b").get(cachedOriginalViewModel);
                     if (oldTitleObject == null) return;
 
-                    Object title = oldTitleObject.getClass().getDeclaredConstructor(int.class).newInstance(0x7f1313b2);
+                    Object title = oldTitleObject.getClass().getDeclaredConstructor(int.class).newInstance(idToUse);
                     Object template = cachedOriginalViewModel;
                     if (template == null) return;
 
@@ -292,9 +299,10 @@ public class ContextMenuHook extends SpotifyHook {
 
                     Boolean[] booleans = getFirstBooleans(template);
 
-                    viewModel = ctor.newInstance("spotifyplus_open_last_fm", title, null, hgf, y6y0, booleans[0], booleans[1], booleans[2], h0y0, 1988);
+                    viewModel = ctor.newInstance(menu.id, title, null, hgf, y6y0, booleans[0], booleans[1], booleans[2], h0y0, 1988);
+                    idToUse++;
 
-                    cachedViewModel = viewModel;
+//                    cachedViewModel = viewModel;
                 }
 
                 callback.returnAndSkip(viewModel);
@@ -303,16 +311,27 @@ public class ContextMenuHook extends SpotifyHook {
 
                 if (intent.getComponent().getClassName().equals("com.spotify.radio.radio.formatlist.RadioFormatListService") && intent.hasExtra(".seed_uri")) {
                     String seed = intent.getStringExtra(".seed_uri");
+                    var thing = scriptMenus.stream().filter(x -> x.id.equals(seed)).findFirst();
+                    if(thing.isEmpty()) return;
+                    ScriptContextMenu menu = thing.get();
 
-                    if (seed.equals("spotifyplus_open_last_fm")) {
-                        Context context = (Context) callback.getThisObject();
+                    JSONObject json = new JSONObject();
+                    json.put("id", menu.id);
+                    json.put("scriptId", menu.scriptId);
 
-                        Intent newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.last.fm/music/" + URLEncoder.encode(trackArtist) + "/_/" + URLEncoder.encode(trackTitle)));
-                        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        context.startActivity(newIntent);
+                    BridgeClient.send("", "event", "menu.press", json);
 
-                        callback.returnAndSkip(null);
-                    }
+                    callback.returnAndSkip(null);
+
+//                    if (seed.equals("spotifyplus_open_last_fm")) {
+//                        Context context = (Context) callback.getThisObject();
+//
+//                        Intent newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.last.fm/music/" + URLEncoder.encode(trackArtist) + "/_/" + URLEncoder.encode(trackTitle)));
+//                        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+//                        context.startActivity(newIntent);
+//
+//                        callback.returnAndSkip(null);
+//                    }
                 }
             } else if (member == iconMethod) {
                 if (!isRenderingSpotifyPlusRow()) return;
@@ -338,9 +357,14 @@ public class ContextMenuHook extends SpotifyHook {
 
                     int id = resourceObject.getClass().getDeclaredField("e").getInt(resourceObject);
 
-                    if (id == 0x7f1313b2) {
-                        callback.returnAndSkip(Utils.getString(currentActivity.getApplicationContext(), R.string.open_last_fm));
-                    }
+                    var thing = scriptMenus.stream().filter(x -> x.resourceId == id).findFirst();
+                    if(thing.isEmpty()) return;
+                    ScriptContextMenu menu = thing.get();
+                    callback.returnAndSkip(menu.title);
+
+//                    if (id == 0x7f1313b2) {
+//                        callback.returnAndSkip(Utils.getString(currentActivity.getApplicationContext(), R.string.open_last_fm));
+//                    }
                 } catch (IllegalArgumentException ignored) {
                 }
             }
@@ -370,6 +394,22 @@ public class ContextMenuHook extends SpotifyHook {
             }
         } catch (Exception e) {
             logError(e);
+        }
+    }
+
+    @Override
+    public void handle(String id, String command, JSONObject json) {
+        if (command.equals("register")) {
+            try {
+                String menuId = json.getString("id");
+                String scriptId = json.getString("scriptId");
+                String title = json.getString("title");
+
+                ScriptContextMenu menu = new ScriptContextMenu(menuId, scriptId, title);
+                if(scriptMenus.contains(menu)) return;
+
+                scriptMenus.add(menu);
+            } catch(Exception ignored) { }
         }
     }
 

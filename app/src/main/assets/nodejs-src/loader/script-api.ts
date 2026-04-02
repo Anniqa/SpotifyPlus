@@ -1,5 +1,5 @@
 import { EventHandler } from "./script-registry";
-import { MenuItemDefinition, SpotifyTrack } from "../core/models";
+import { ContextMenu, MenuItemDefinition, OnClickCallback, PlatformData, Session, ShouldAddCallback, SideDrawerItem, SideOnClickCallback, SpotifyTrack } from "../core/models";
 import { Logger } from "../core/logger";
 import { HostRuntime } from "./host-runtime";
 
@@ -7,6 +7,14 @@ export interface ScriptConsole {
     log: (...args: unknown[]) => void;
     warn: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
+}
+
+export interface ContextMenuConstructor {
+    new(name: string, onClick: OnClickCallback, shouldAdd?: ShouldAddCallback, disabled?: boolean): ContextMenu;
+}
+
+export interface SideDrawerConstructor {
+    new(name: string, onClick: SideOnClickCallback): SideDrawerItem;
 }
 
 export interface ScriptGlobals {
@@ -32,19 +40,39 @@ export interface SpotifyPlusApi {
     off(eventName: string, handler: EventHandler): void;
 
     request<TPayload = unknown>(name: string, payload?: unknown): Promise<TPayload>;
-    toast(text: string): void;
+    toast(text: string, length?: 'short' | 'long'): void;
     openUrl(url: string): void;
     emit(eventName: string, payload?: unknown): void;
 
+    Platform: {
+        PlatformData: PlatformData;
+        Session: Session;
+        Storage: {
+            set(key: string, value: any): void;
+            get(key: string): any;
+        }
+    }
+
     Player: {
         getCurrentTrack(): Promise<SpotifyTrack | null>;
+        seek(position: number): void;
+        play(): void;
+        pause(): void;
+        togglePlay(): void;
+        skipNext(): void;
+        skipPrevious(): void;
     }
+
     UI: {
-        toast(text: string): void;
+        toast(text: string, length?: 'short' | 'long'): void;
     }
+
     Menu: {
         addItem(item: MenuItemDefinition): void;
     }
+
+    ContextMenu: ContextMenuConstructor;
+    SideDrawer: SideDrawerConstructor;
 }
 
 export class ScriptApiFactory {
@@ -52,6 +80,40 @@ export class ScriptApiFactory {
 
     create(scriptId: string): ScriptGlobals {
         const scriptLogger = this.logger.child(scriptId);
+        const runtime = this.runtime;
+
+        const ScriptContextMenu = class extends ContextMenu {
+            constructor(name: string, onClick: OnClickCallback, shouldAdd?: ShouldAddCallback, disabled?: boolean) {
+                super(name, onClick, shouldAdd, disabled, (menu: ContextMenu) => {
+                    const id = `${scriptId}:${menu.name}`;
+
+                    runtime.registry.registerContextMenu(scriptId, id, menu);
+
+                    runtime.sendCommand("menu.register", {
+                        id,
+                        scriptId,
+                        title: menu.name,
+                        disabled: menu.disabled
+                    });
+                });
+            }
+        }
+
+        const ScriptSideDrawer = class extends SideDrawerItem {
+            constructor(name: string, onClick: SideOnClickCallback) {
+                super(name, onClick, (drawer: SideDrawerItem) => {
+                    const id = `${scriptId}:${drawer.name}`;
+
+                    runtime.registry.registerSideDrawer(scriptId, id, drawer);
+
+                    runtime.sendCommand("side.register", {
+                        id,
+                        scriptId,
+                        title: drawer.name
+                    });
+                });
+            }
+        }
 
         const api: SpotifyPlusApi = {
             scriptId,
@@ -62,18 +124,37 @@ export class ScriptApiFactory {
             on: (eventName, handler) => this.runtime.registry.on(scriptId, eventName, handler),
             off: (eventName, handler) => this.runtime.registry.off(scriptId, eventName, handler),
             request: (name, payload = {}) => this.runtime.request(name, payload),
-            toast: text => this.runtime.sendCommand('ui.toast', { text }),
+            toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length }),
             openUrl: url => this.runtime.sendCommand('system.openUrl', { url }),
             emit: (eventName, payload = {}) => this.runtime.sendEvent(eventName, payload),
+            Platform: {
+                PlatformData: this.runtime.platformData,
+                Session: this.runtime.session,
+                Storage: {
+                    set: (key, value) => this.runtime.sendCommand('storage.set', { scriptId, key, value }),
+                    get: async (key) => {
+                        const payload = await this.runtime.request('storage.get', { scriptId, key });
+                        return payload ? payload : null;
+                    }
+                }
+            },
             Player: {
-                getCurrentTrack: () => this.runtime.getCurrentTrack()
+                getCurrentTrack: () => this.runtime.getCurrentTrack(),
+                seek: (position) => this.runtime.seek(position),
+                play: () => this.runtime.togglePlay(true),
+                pause: () => this.runtime.togglePlay(false),
+                togglePlay: () => this.runtime.togglePlay(),
+                skipNext: () => this.runtime.sendCommand('player.skipNext', {}),
+                skipPrevious: () => this.runtime.sendCommand('player.skipPrevious', {})
             },
             UI: {
-                toast: text => this.runtime.sendCommand('ui.toast', { text })
+                toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length })
             },
             Menu: {
                 addItem: item => this.runtime.sendCommand('menu.addItem', { scriptId, ...item })
-            }
+            },
+            ContextMenu: ScriptContextMenu,
+            SideDrawer: ScriptSideDrawer
         };
 
         const scriptConsole: ScriptConsole = {
@@ -95,6 +176,7 @@ export class ScriptApiFactory {
 
         globals.global = globals;
         globals.globalThis = globals;
+
         return globals;
     }
 }

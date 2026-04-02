@@ -11,6 +11,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 import io.github.libxposed.api.XposedModuleInterface;
+import org.json.JSONObject;
 import org.luckypray.dexkit.DexKitBridge;
 
 import java.lang.reflect.Constructor;
@@ -59,6 +60,9 @@ public abstract class SpotifyHook implements XposedInterface.Hooker {
     protected abstract void beforeHook(SpotifyCallback callback);
 
     protected abstract void afterHook(SpotifyCallback callback);
+
+    /// Handle incoming messages from scripts
+    public abstract void handle(String id, String command, JSONObject json);
 
     protected static SpotifyCallback buildCallback(XposedInterface.BeforeHookCallback callback) {
         try {

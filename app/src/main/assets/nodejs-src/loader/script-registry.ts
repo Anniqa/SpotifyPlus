@@ -1,4 +1,5 @@
 import { Logger } from "../core/logger";
+import { ContextMenu, SideDrawerItem } from "../core/models";
 import { ScriptManifest } from "./script-manifest";
 
 export type EventHandler = (payload: unknown) => void | Promise<void>;
@@ -8,9 +9,23 @@ export interface Script {
     directoryPath: string;
 }
 
+interface RegisteredContextMenu {
+    scriptId: string;
+    id: string;
+    menu: ContextMenu;
+}
+
+interface RegisteredSideDrawer {
+    scriptId: string;
+    id: string;
+    item: SideDrawerItem;
+}
+
 export class ScriptRegistry {
     private readonly scripts = new Map<string, Script>();
     private readonly eventHandlers = new Map<string, Map<string, Set<EventHandler>>>();
+    private readonly menus = new Map<string, RegisteredContextMenu>();
+    private readonly sideDrawerItems = new Map<string, RegisteredSideDrawer>();
 
     constructor(private readonly logger: Logger) { }
 
@@ -68,5 +83,23 @@ export class ScriptRegistry {
                 }
             }
         }
+    }
+
+    registerContextMenu(scriptId: string, id: string, menu: ContextMenu): void {
+        this.menus.set(id, { scriptId, id, menu });
+    }
+
+    emitContextMenuPress(scriptId: string, id: string): void {
+        const menu = this.menus.get(id);
+        menu?.menu.onClick();
+    }
+
+    registerSideDrawer(scriptId: string, id: string, item: SideDrawerItem): void {
+        this.sideDrawerItems.set(id, { scriptId, id, item });
+    }
+
+    emitSideDrawerPress(scriptId: string, id: string): void {
+        const item = this.sideDrawerItems.get(id);
+        item?.item.onClick();
     }
 }

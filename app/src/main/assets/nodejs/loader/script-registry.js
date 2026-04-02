@@ -6,6 +6,8 @@ class ScriptRegistry {
         this.logger = logger;
         this.scripts = new Map();
         this.eventHandlers = new Map();
+        this.menus = new Map();
+        this.sideDrawerItems = new Map();
     }
     registerScript(script) {
         if (this.scripts.has(script.manifest.id))
@@ -58,6 +60,20 @@ class ScriptRegistry {
                 }
             }
         }
+    }
+    registerContextMenu(scriptId, id, menu) {
+        this.menus.set(id, { scriptId, id, menu });
+    }
+    emitContextMenuPress(scriptId, id) {
+        const menu = this.menus.get(id);
+        menu?.menu.onClick();
+    }
+    registerSideDrawer(scriptId, id, item) {
+        this.sideDrawerItems.set(id, { scriptId, id, item });
+    }
+    emitSideDrawerPress(scriptId, id) {
+        const item = this.sideDrawerItems.get(id);
+        item?.item.onClick();
     }
 }
 exports.ScriptRegistry = ScriptRegistry;

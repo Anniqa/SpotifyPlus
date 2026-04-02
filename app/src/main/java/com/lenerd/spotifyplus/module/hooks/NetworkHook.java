@@ -4,10 +4,12 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
-import android.net.NetworkInfo;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -20,10 +22,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.lenerd.spotifyplus.BuildConfig;
 import com.lenerd.spotifyplus.R;
-import com.lenerd.spotifyplus.module.SpotifyCallback;
-import com.lenerd.spotifyplus.module.SpotifyHook;
-import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
-import com.lenerd.spotifyplus.module.Utils;
+import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
+import com.lenerd.spotifyplus.module.*;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -33,18 +33,15 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.jetbrains.annotations.NotNull;
+import org.json.JSONObject;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.xmlpull.v1.XmlPullParser;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static com.lenerd.spotifyplus.module.Utils.bridge;
 
 @XposedHooker
 public class NetworkHook extends SpotifyHook {
@@ -61,7 +58,9 @@ public class NetworkHook extends SpotifyHook {
         httpBuildMethod = bridge.findMethod(FindMethod.create().searchInClass(Collections.singletonList(requestClassData)).matcher(MethodMatcher.create().usingStrings("ws").paramTypes(String.class))).get(0).getMethodInstance(classLoader);
         hook(httpBuildMethod);
 
-        hook(findClass("com.spotify.music.SpotifyMainActivity").getDeclaredMethod("onCreate", Bundle.class));
+        Class<?> mainActivity = findClass("com.spotify.music.SpotifyMainActivity");
+        hook(mainActivity.getDeclaredMethod("onCreate", Bundle.class));
+        hook(mainActivity.getDeclaredMethod("onResume"));
 
 //        hook(LayoutInflater.class.getDeclaredMethod("inflate", int.class, ViewGroup.class));
 //        hook(LayoutInflater.class.getDeclaredMethod("inflate", int.class, ViewGroup.class, boolean.class));
@@ -78,15 +77,34 @@ public class NetworkHook extends SpotifyHook {
 
     @Override
     protected void beforeHook(SpotifyCallback callback) {
-        if (callback.getMember().getName().equals("onCreate")) {
+        if (callback.getMember().getName().equals("onCreate") || callback.getMember().getName().equals("onResume")) {
             try {
                 // I know this doesn't really fit, but I'm not sure where else to put it. I'm not creating an entire new class just for this
-                SpotifyHook.currentActivity = (Activity) callback.getThisObject();
+                Activity activity = (Activity) callback.getThisObject();
+                SpotifyHook.currentActivity = activity;
+                if (!SpotifyLoader.bridgeInitialized) {
+                    Intent intent = new Intent("com.lenerd.spotifyplus.action.START_BRIDGE");
+                    intent.setClassName("com.lenerd.spotifyplus", "com.lenerd.spotifyplus.manager.bridge.BridgeStartReceiver");
+                    activity.sendBroadcast(intent);
+
+                    SpotifyLoader.bridgeInitialized = true;
+                }
+
+                PackageManager pm = activity.getPackageManager();
+                PackageInfo info = pm.getPackageInfo(activity.getPackageName(), 0);
+
+                JSONObject platform = new JSONObject();
+                platform.put("clientVersion", info.versionName);
+                platform.put("osName", "android");
+                platform.put("osVersion", Build.VERSION.RELEASE);
+                platform.put("sdkVersion", Build.VERSION.SDK_INT);
+
+                BridgeClient.connect(platform);
 
                 if (!checkedForUpdates) {
-                    loadPreferences((Activity) callback.getThisObject());
+                    loadPreferences(activity);
                     // Checking for updates is kind of a network thing, right?
-                    checkForUpdates((Activity) callback.getThisObject());
+                    checkForUpdates(activity);
                 }
             } catch (Exception e) {
                 logError(e);
@@ -98,15 +116,24 @@ public class NetworkHook extends SpotifyHook {
                 if (url.contains("/ads")) {
                     callback.getArgs()[0] = "https://127.0.0.1:404/";
                 }
-            } else if(url.contains("gabo-receiver-service") || url.contains("net-fortune") || url.contains("darwin-experiments") || url.contains("speechless-sharing") || url.contains("pendragon")) {
+            } else if (url.contains("gabo-receiver-service") || url.contains("net-fortune") || url.contains("darwin-experiments") || url.contains("speechless-sharing") || url.contains("pendragon")) {
                 callback.getArgs()[0] = "https://127.0.0.1:404/";
             }
         } else if (callback.getArgs().length >= 2) {
-            String headerName = (String) callback.getArgs()[0];
-            String headerValue = (String) callback.getArgs()[1];
+            try {
+                String headerName = (String) callback.getArgs()[0];
+                String headerValue = (String) callback.getArgs()[1];
 
-            if (headerName != null && headerName.equalsIgnoreCase("authorization") && headerValue != null && !headerValue.isEmpty()) {
-                Utils.token = headerValue.replace("Bearer", "").trim();
+                if (headerName != null && headerName.equals("Authorization") && headerValue != null && !headerValue.isEmpty()) {
+                    String token = headerValue.replace("Bearer", "").trim();
+                    if (Utils.token == null || !Utils.token.equals(token)) {
+                        Utils.token = token;
+
+                        BridgeClient.send("", "event", "event.updateToken", new JSONObject().put("accessToken", token));
+                    }
+                }
+            } catch(Exception e) {
+                logError(e);
             }
         }
 
@@ -145,6 +172,11 @@ public class NetworkHook extends SpotifyHook {
         } catch (Exception e) {
             logError(e);
         }
+    }
+
+    @Override
+    public void handle(String id, String command, JSONObject json) {
+
     }
 
     private void loadPreferences(Activity activity) {

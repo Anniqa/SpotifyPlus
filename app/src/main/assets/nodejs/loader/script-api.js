@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ScriptApiFactory = void 0;
+const models_1 = require("../core/models");
 class ScriptApiFactory {
     constructor(runtime, logger) {
         this.runtime = runtime;
@@ -8,6 +9,34 @@ class ScriptApiFactory {
     }
     create(scriptId) {
         const scriptLogger = this.logger.child(scriptId);
+        const runtime = this.runtime;
+        const ScriptContextMenu = class extends models_1.ContextMenu {
+            constructor(name, onClick, shouldAdd, disabled) {
+                super(name, onClick, shouldAdd, disabled, (menu) => {
+                    const id = `${scriptId}:${menu.name}`;
+                    runtime.registry.registerContextMenu(scriptId, id, menu);
+                    runtime.sendCommand("menu.register", {
+                        id,
+                        scriptId,
+                        title: menu.name,
+                        disabled: menu.disabled
+                    });
+                });
+            }
+        };
+        const ScriptSideDrawer = class extends models_1.SideDrawerItem {
+            constructor(name, onClick) {
+                super(name, onClick, (drawer) => {
+                    const id = `${scriptId}:${drawer.name}`;
+                    runtime.registry.registerSideDrawer(scriptId, id, drawer);
+                    runtime.sendCommand("side.register", {
+                        id,
+                        scriptId,
+                        title: drawer.name
+                    });
+                });
+            }
+        };
         const api = {
             scriptId,
             version: 1,
@@ -17,18 +46,24 @@ class ScriptApiFactory {
             on: (eventName, handler) => this.runtime.registry.on(scriptId, eventName, handler),
             off: (eventName, handler) => this.runtime.registry.off(scriptId, eventName, handler),
             request: (name, payload = {}) => this.runtime.request(name, payload),
-            toast: text => this.runtime.sendCommand('ui.toast', { text }),
+            toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length }),
             openUrl: url => this.runtime.sendCommand('system.openUrl', { url }),
             emit: (eventName, payload = {}) => this.runtime.sendEvent(eventName, payload),
+            Platform: {
+                PlatformData: this.runtime.platformData,
+                Session: this.runtime.session
+            },
             Player: {
                 getCurrentTrack: () => this.runtime.getCurrentTrack()
             },
             UI: {
-                toast: text => this.runtime.sendCommand('ui.toast', { text })
+                toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length })
             },
             Menu: {
                 addItem: item => this.runtime.sendCommand('menu.addItem', { scriptId, ...item })
-            }
+            },
+            ContextMenu: ScriptContextMenu,
+            SideDrawer: ScriptSideDrawer
         };
         const scriptConsole = {
             log: (...args) => api.log(...args),

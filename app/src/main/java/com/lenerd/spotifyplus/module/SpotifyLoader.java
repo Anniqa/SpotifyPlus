@@ -3,7 +3,9 @@ package com.lenerd.spotifyplus.module;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.lenerd.spotifyplus.BuildConfig;
+import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.hooks.*;
+import com.lenerd.spotifyplus.module.scripting.ScriptManager;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 import io.github.libxposed.api.XposedModuleInterface;
@@ -16,6 +18,7 @@ public class SpotifyLoader extends XposedModule {
     static {
         System.loadLibrary("dexkit");
     }
+    public static volatile boolean bridgeInitialized = false;
 
     public SpotifyLoader(@NonNull @NotNull XposedInterface base, @NonNull @NotNull XposedModuleInterface.ModuleLoadedParam param) {
         super(base, param);
@@ -36,11 +39,17 @@ public class SpotifyLoader extends XposedModule {
             }
         }
 
+        new ScriptManager();
+
         new LyricsHook().init(this, param, bridge);
         new NetworkHook().init(this, param, bridge);
         new SideDrawerHook().init(this, param, bridge);
         new LegacyContextMenuHook().init(this, param, bridge);
         new ContextMenuHook().init(this, param, bridge);
         new AnimatedAlbumArtwork().init(this, param, bridge);
+        new DebugHook().init(this, param, bridge);
+        new PlayerHook().init(this, param, bridge);
+        new StorageHook().init(this, param, bridge);
+        new TestHook().init(this, param, bridge);
     }
 }

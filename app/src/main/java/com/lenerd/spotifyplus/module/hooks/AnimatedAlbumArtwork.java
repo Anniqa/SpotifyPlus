@@ -1,7 +1,6 @@
 package com.lenerd.spotifyplus.module.hooks;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.graphics.Outline;
 import android.graphics.Rect;
 import android.os.Build;
@@ -31,6 +30,7 @@ import io.github.libxposed.api.annotations.XposedHooker;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.json.JSONObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -118,6 +118,11 @@ public class AnimatedAlbumArtwork extends SpotifyHook {
                 }
             });
         }
+    }
+
+    @Override
+    public void handle(String id, String command, JSONObject json) {
+
     }
 
     private View findByIdName(View root, String idName) {

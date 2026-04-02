@@ -2,10 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING"/>
+
     <queries>
-        <package android:name="com.spotify.music" />
+        <package android:name="com.spotify.music"/>
     </queries>
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
             android:allowBackup="true"
@@ -27,11 +30,9 @@
             </intent-filter>
         </activity>
 
-        <receiver android:name=".manager.SettingsReceiver" android:exported="true">
-            <intent-filter>
-                <action android:name="com.lenerd.spotifyplus.SET_PREF" />
-            </intent-filter>
-        </receiver>
+        <receiver android:name=".manager.bridge.BridgeStartReceiver" android:exported="true" />
+
+        <service android:name=".manager.bridge.BridgeService" android:exported="false" android:foregroundServiceType="remoteMessaging"/>
 
         <meta-data android:name="xposedmodule" android:value="true"/>
         <meta-data android:name="xposeddescription" android:value="Enhance Spotify with cool stuff"/>

@@ -3,7 +3,7 @@ package com.lenerd.spotifyplus.manager.scripting;
 import android.app.Activity;
 import android.content.res.AssetManager;
 import android.util.Log;
-import com.lenerd.spotifyplus.manager.scripting.handlers.DebugHandler;
+import com.lenerd.spotifyplus.manager.bridge.BridgeRouter;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -13,7 +13,7 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
-public class ScriptManager {
+public class ScriptManager implements NodePacketSink {
     static {
         System.loadLibrary("native-lib");
         System.loadLibrary("node");
@@ -21,12 +21,11 @@ public class ScriptManager {
 
     private static boolean nodeStarted = false;
     private final Activity activity;
-    private final Map<String, CommandHandler> handlers = new HashMap();
 
     public ScriptManager(Activity activity) {
         this.activity = activity;
         nativeInit();
-        registerCommandHandlers();
+        NodePacketSinkHolder.set(this);
     }
 
     public synchronized void start() {
@@ -49,10 +48,6 @@ public class ScriptManager {
         new Thread(() -> {
             int result = startNodeWithArguments(new String[]{"node", hostFile.getAbsolutePath(), scripts.getAbsolutePath()});
         }).start();
-    }
-
-    private void registerCommandHandlers() {
-        handlers.put("debug", new DebugHandler());
     }
 
     private void getAssetFolder(AssetManager assetManager, String assetPath, String outPath) throws IOException {
@@ -94,17 +89,7 @@ public class ScriptManager {
             String name = packet.optString("name", "");
             JSONObject payload = packet.optJSONObject("payload");
 
-            CommandHandler handler = handlers.get(name);
-            if (handler == null) {
-                Log.w("SpotifyPlus", "Unknown Command: " + name);
-                return;
-            }
-
-            try {
-                handler.handle(payload);
-            } catch(Exception e) {
-                Log.e("SpotifyPlus", "Failed to handle command: " + name, e);
-            }
+            BridgeRouter.send(id, type, name, payload);
         } catch (Exception e) {
             Log.e("SpotifyPlus", "Failed to parse message from node", e);
         }

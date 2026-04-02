@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Bridge } from '../bridge/bridge';
 import { Logger } from "../core/logger";
-import { SpotifyTrack, SpotifyTrackData } from "../core/models";
+import { GetProgressData, ItemPress, PlatformData, Session, SpotifyTrack, SpotifyTrackData } from "../core/models";
 import { ErrorPacket, Packet, ResponsePacket } from "../core/protocol";
 import { ScriptRegistry } from "./script-registry";
 
@@ -16,9 +16,27 @@ export class HostRuntime {
     private readonly bridge: Bridge;
     private readonly pendingRequests = new Map<string, PendingRequest>();
 
+    private spotifyConnecting: boolean = false;
+    private spotifyConnectingWaiters = new Set<(value: boolean) => void>();
+
+    private spotifyReady: boolean = false;
+    private spotifyReadyWaiters = new Set<(ready: boolean) => void>;
+
+    public platformData: PlatformData;
+    public session: Session;
+
     constructor(private readonly logger: Logger) {
         this.registry = new ScriptRegistry(logger.child('Registry'));
         this.bridge = new Bridge(logger.child('Bridge'));
+        this.platformData = {
+            clientVersion: 'unknown',
+            osName: 'android',
+            osVersion: 'unknown',
+            sdkVersion: 0
+        };
+        this.session = {
+            accessToken: ''
+        }
     }
 
     start(): void {
@@ -50,17 +68,54 @@ export class HostRuntime {
     }
 
     async getCurrentTrack(): Promise<SpotifyTrack | null> {
-        const payload = await this.request<SpotifyTrackData | null>('track.getCurrent', {});
+        const payload = await this.request<SpotifyTrackData | null>('player.getCurrent', {});
         return payload ? SpotifyTrack.from(payload) : null;
     }
 
+    seek(position: number): void {
+        const thing = `${position}`;
+        this.sendCommand('player.seek', { thing });
+    }
+
+    togglePlay(play?: boolean): void {
+        this.sendCommand('player.togglePlay', play ? { play } : {});
+    }
+
+    async getProgress(): Promise<number | null> {
+        const payload = await this.request<GetProgressData | null>('player.getProgress', {});
+        return payload ? payload.position : -1;
+    }
+
     private async handleIncomingPacket(packet: Packet): Promise<void> {
-        this.logger.info(`Incoming ${packet.type}:${packet.name}}`);
+        this.logger.info(`Incoming ${packet.type}:${packet.name ?? packet.id}`);
 
         switch (packet.type) {
             case 'event':
+                if (packet.name === 'event.connecting') {
+                    this.markSpotifyConnecting();
+                }
+                if (packet.name === 'event.ready') {
+                    this.markSpotifyReady();
+                    this.logger.info(`${(packet.payload as PlatformData).clientVersion}`);
+                    this.platformData = packet.payload as PlatformData;
+                }
+                if (packet.name === 'event.updateToken') {
+                    this.session = packet.payload as Session;
+                }
+                if (packet.name === 'menu.press') {
+                    const payload = packet.payload as ItemPress;
+                    this.registry.emitContextMenuPress(payload.scriptId, payload.id);
+                }
+                if (packet.name === 'side.press') {
+                    const payload = packet.payload as ItemPress;
+                    this.registry.emitSideDrawerPress(payload.scriptId, payload.id);
+                }
+
+                await this.registry.emit(packet.name!, packet.payload);
+                break;
+
             case 'command':
-                await this.registry.emit(packet.name, packet.payload);
+                await this.registry.emit(packet.name!, packet.payload);
                 break;
 
             case 'response':
@@ -72,7 +127,7 @@ export class HostRuntime {
                 break;
 
             case 'request':
-                this.logger.warn(`Unexpected request form Java: ${packet.name}`);
+                this.logger.warn(`Unexpected request from Java: ${packet.name}`);
                 break;
         }
     }
@@ -98,7 +153,7 @@ export class HostRuntime {
             const pending = this.pendingRequests.get(packet.id);
             if (pending) {
                 this.pendingRequests.delete(packet.id);
-                const error = new Error(packet.payload?.message ?? `Request fialed: ${packet.name}`);
+                const error = new Error(packet.payload?.message ?? `Request failed: ${packet.name}`);
 
                 if (packet.payload?.stack) error.stack = packet.payload.stack;
                 pending.reject(error);
@@ -107,5 +162,65 @@ export class HostRuntime {
         }
 
         this.logger.error(`Unhandled error packet ${packet.name}`, packet.payload);
+    }
+
+    waitForSpotifyConnecting(): Promise<void> {
+        if (this.spotifyConnecting) return Promise.resolve();
+
+        return new Promise<void>(resolve => {
+            const waiter = () => {
+                this.spotifyConnectingWaiters.delete(waiter);
+                resolve();
+            };
+
+            this.spotifyConnectingWaiters.add(waiter);
+        });
+    }
+
+    private markSpotifyConnecting(): void {
+        if (this.spotifyConnecting) return;
+
+        this.spotifyConnecting = true;
+
+        for (const waiter of this.spotifyConnectingWaiters) {
+            try {
+                waiter(true);
+            } catch { }
+        }
+
+        this.spotifyConnectingWaiters.clear();
+    }
+
+    waitForSpotifyReady(timeoutMs = 15000): Promise<boolean> {
+        if (this.spotifyReady) return Promise.resolve(true);
+
+        return new Promise<boolean>(resolve => {
+            const waiter = (ready: boolean) => {
+                clearTimeout(timeout);
+                this.spotifyReadyWaiters.delete(waiter);
+                resolve(ready);
+            };
+
+            const timeout = setTimeout(() => {
+                this.spotifyReadyWaiters.delete(waiter);
+                resolve(false);
+            }, timeoutMs);
+
+            this.spotifyReadyWaiters.add(waiter);
+        });
+    }
+
+    private markSpotifyReady(): void {
+        if (this.spotifyReady) return;
+
+        this.spotifyReady = true;
+
+        for (const waiter of this.spotifyReadyWaiters) {
+            try {
+                waiter(true);
+            } catch { }
+        }
+
+        this.spotifyReadyWaiters.clear();
     }
 }

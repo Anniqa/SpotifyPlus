@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SpotifyTrack = void 0;
+exports.SideDrawerItem = exports.ContextMenu = exports.SpotifyTrack = void 0;
 class SpotifyTrack {
     constructor(data) {
         this.uri = data.uri;
@@ -28,3 +28,35 @@ class SpotifyTrack {
     }
 }
 exports.SpotifyTrack = SpotifyTrack;
+class ContextMenu {
+    constructor(name, onClick, shouldAdd, disabled, registerThing) {
+        this.name = name;
+        this.onClick = onClick;
+        this.shouldAdd = shouldAdd;
+        this.disabled = disabled ?? false;
+        this.registerThing = registerThing;
+    }
+    register() {
+        if (!this.registerThing) {
+            throw new Error('ContextMenu register thing has not been initialized');
+        }
+        this.registerThing(this);
+        return this;
+    }
+}
+exports.ContextMenu = ContextMenu;
+class SideDrawerItem {
+    constructor(name, onClick, registerThing) {
+        this.name = name;
+        this.onClick = onClick;
+        this.registerThing = registerThing;
+    }
+    register() {
+        if (!this.registerThing) {
+            throw new Error('SideDrawer register thing has not been initialized');
+        }
+        this.registerThing(this);
+        return this;
+    }
+}
+exports.SideDrawerItem = SideDrawerItem;

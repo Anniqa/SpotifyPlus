@@ -386,7 +386,7 @@ public final class Utils {
 
             return progressList.get(0).getFieldInstance(state.getClass().getClassLoader()).getLong(state);
         } catch (Exception e) {
-            Log.e("SpotifyPlus", e.getMessage(), e);
+//            Log.e("SpotifyPlus", e.getMessage(), e);
             return -1;
         }
     }

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Pair;
@@ -23,14 +24,18 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.lenerd.spotifyplus.BuildConfig;
 import com.lenerd.spotifyplus.R;
 import com.lenerd.spotifyplus.SettingsSync;
+import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.SpotifyCallback;
 import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
 import com.lenerd.spotifyplus.module.Utils;
+import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.ScriptSideDrawerItem;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
 import io.github.libxposed.api.annotations.XposedHooker;
+import org.json.JSONObject;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.FindMethod;
@@ -50,9 +55,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -62,7 +65,7 @@ public class SideDrawerHook extends SpotifyHook {
     private static final int SETTINGS_OVERLAY_ID = 0x53504c53;
     private static final int DETAILED_SETTINGS_OVERLAY_ID = 0x53504c54;
     private static int idToUse = 8001;
-    private static int resourceIdToUse = 2131957895;
+    private static int resourceIdToUse = 2131957898;
     private static SharedPreferences prefs;
     private static boolean isNewSideDrawer = false;
 
@@ -93,6 +96,8 @@ public class SideDrawerHook extends SpotifyHook {
     private static Object targetOnClick;
     private static Runnable onClickRunnable;
     private static Method resourceMethod;
+
+    private final List<ScriptSideDrawerItem> scriptItems = new ArrayList<>();
 
     //    private static final ConcurrentHashMap<Pair<Integer, String>, List<SettingItem.SettingSection>> scriptSettings = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Pair<Integer, String>, Runnable> scriptSideButtons = new ConcurrentHashMap<>();
@@ -240,6 +245,8 @@ public class SideDrawerHook extends SpotifyHook {
         var resourceClass = bridge.findClass(FindClass.create().matcher(ClassMatcher.create().usingStrings("ad.skippable_ad_delay")));
         resourceMethod = bridge.findMethod(FindMethod.create().searchInClass(resourceClass).matcher(MethodMatcher.create().returnType(String.class).paramCount(2))).get(0).getMethodInstance(classLoader);
         hook(resourceMethod);
+
+        ScriptManager.registerHandler("side", this);
     }
 
     @BeforeInvocation
@@ -256,11 +263,17 @@ public class SideDrawerHook extends SpotifyHook {
         try {
             if (member == resourceMethod) {
                 int id = (int) callback.getArgs()[1];
+
                 if (id == 2131957897) {
-                    String string = Utils.getString(currentActivity.get(), R.string.settings_label);
-                    callback.returnAndSkip(string);
-                    //                    callback.returnAndSkip(Utils.getString(currentActivity.get().getApplicationContext(), "settings_label"));
+                    callback.returnAndSkip(Utils.getString(currentActivity.get(), R.string.settings_label));
+                    return;
                 }
+
+                var thing = scriptItems.stream().filter(x -> x.resourceId == id).findFirst();
+                if(thing.isEmpty()) return;
+
+                ScriptSideDrawerItem item = thing.get();
+                callback.returnAndSkip(item.title);
             }
 
             if (member == mainOnCreateMethod) {
@@ -304,7 +317,7 @@ public class SideDrawerHook extends SpotifyHook {
                 if (originalItems.length < 4 || originalItems[0].getClass() != buttonClass) return;
 
                 isNewSideDrawer = originalItems.length >= 6 && originalItems.length != 12;
-                Object newArray = Array.newInstance(buttonClass, originalItems.length + 2 + scriptSideButtons.size());
+                Object newArray = Array.newInstance(buttonClass, originalItems.length + 2 + scriptItems.size());
                 for (int i = 0; i < originalItems.length; i++) Array.set(newArray, i, originalItems[i]);
 
                 Object template = originalItems[isNewSideDrawer ? originalItems.length - 2 : originalItems.length - 1];
@@ -312,10 +325,19 @@ public class SideDrawerHook extends SpotifyHook {
                 Array.set(newArray, originalItems.length, createSideDrawerButton("Spotify Plus Settings", template, 2131957897, this::showSettingsOverlay));
 
                 int index = originalItems.length + 2;
-                for (var item : scriptSideButtons.keySet()) {
-                    Runnable run = scriptSideButtons.get(item);
-                    Array.set(newArray, index, createSideDrawerButton(item.second, templateLightning, resourceIdToUse, run));
-                    resourceIdToUse--;
+                for (var item : scriptItems) {
+                    Array.set(newArray, index, createSideDrawerButton(item.title, templateLightning, item.resourceId, () -> {
+                        try {
+                            JSONObject json = new JSONObject();
+                            json.put("id", item.id);
+                            json.put("scriptId", item.scriptId);
+
+                            BridgeClient.send("", "event", "side.press", json);
+                        } catch(Exception e) {
+                            logError(e);
+                        }
+                    }));
+
                     index++;
                 }
 
@@ -401,6 +423,26 @@ public class SideDrawerHook extends SpotifyHook {
             }
         } catch (Throwable t) {
             logError(t);
+        }
+    }
+
+    @Override
+    public void handle(String id, String command, JSONObject json) {
+        if (command.equals("register")) {
+            try {
+                String itemId = json.getString("id");
+                String scriptId = json.getString("scriptId");
+                String title = json.getString("title");
+
+                ScriptSideDrawerItem item = new ScriptSideDrawerItem(itemId, scriptId, title);
+                if (scriptItems.contains(item)) return;
+
+                item.resourceId = resourceIdToUse;
+                resourceIdToUse++;
+
+                scriptItems.add(item);
+            } catch (Exception ignored) {
+            }
         }
     }
 

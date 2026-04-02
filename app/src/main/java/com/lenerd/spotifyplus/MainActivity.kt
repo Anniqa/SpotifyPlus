@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelProvider
+import com.lenerd.spotifyplus.manager.bridge.BridgeService
 import com.lenerd.spotifyplus.manager.scripting.ScriptManager
 import com.lenerd.spotifyplus.manager.ui.SpotifyPlusApp
 import com.lenerd.spotifyplus.manager.ui.theme.SpotifyPlusTheme
@@ -50,6 +51,8 @@ class MainActivity : ComponentActivity() {
 
         val scriptManager = ScriptManager(this)
         scriptManager.start()
+
+        BridgeService()
 
         Handler(Looper.getMainLooper()).postDelayed({
             scriptManager.testPing()

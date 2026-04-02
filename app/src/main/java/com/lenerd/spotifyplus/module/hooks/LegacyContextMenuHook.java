@@ -3,13 +3,11 @@ package com.lenerd.spotifyplus.module.hooks;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.AttributeSet;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.View;
@@ -31,6 +29,7 @@ import io.github.libxposed.api.annotations.BeforeInvocation;
 import io.github.libxposed.api.annotations.XposedHooker;
 import okhttp3.*;
 import org.jetbrains.annotations.NotNull;
+import org.json.JSONObject;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
@@ -291,6 +290,11 @@ public class LegacyContextMenuHook extends SpotifyHook {
             int orig = (int) callback.getResult();
             callback.setResult(orig + 1);
         }
+    }
+
+    @Override
+    public void handle(String id, String command, JSONObject json) {
+
     }
 
     private View findContextMenuRecycler(ViewGroup root) {
