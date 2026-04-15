@@ -224,12 +224,15 @@ public class PlayerHook extends SpotifyHook {
                     if (track == null) return;
 
                     JSONObject payload = new JSONObject();
-                    payload.put("uri", track.uri);
                     payload.put("title", track.title);
+                    payload.put("trackNumber", track.trackNumber);
                     payload.put("artist", track.artist);
+                    payload.put("artists", track.artists);
+                    payload.put("explicit", track.explicit);
+                    payload.put("uri", track.uri);
                     payload.put("album", track.album);
                     payload.put("durationMs", track.duration);
-                    payload.put("artworkUrl", "https://i.scdn.co/image/" + track.imageId);
+//                    payload.put("artworkUrl", "https://i.scdn.co/image/" + track.imageId);
 
                     BridgeClient.send(id, "response", "", payload);
                 }

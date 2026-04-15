@@ -107,6 +107,7 @@ export interface LayoutStyle {
 export interface TransformStyle {
     opacity?: number;
     backgroundColor?: ColorValue;
+    borderRadius?: SizeValue;
     transform?: never;
     elevation?: SizeValue;
     scaleX?: number;
@@ -176,6 +177,7 @@ export interface CommonViewProps extends RelativeLayoutRuleProps {
 
     opacity?: number;
     backgroundColor?: ColorValue;
+    borderRadius?: SizeValue;
     elevation?: SizeValue;
     rotation?: number;
     rotationX?: number;
@@ -219,6 +221,7 @@ export interface CommonViewProps extends RelativeLayoutRuleProps {
 
     flex?: number;
     flexGrow?: number;
+    layoutWeight?: number;
     flexDirection?: FlexDirectionValue;
     justifyContent?: JustifyContentValue;
     alignItems?: AlignItemsValue;
@@ -458,6 +461,8 @@ function mapGravityFromFlex(flexDirection?: FlexDirectionValue, justifyContent?:
 
 function mapLayoutProps(input: HostProps): HostProps {
     const output: HostProps = {};
+
+    if (input.layoutWeight !== undefined) output.layoutWeight = input.layoutWeight;
 
     const flex = input.flex ?? input.flexGrow;
     if (flex !== undefined && input.layoutWeight === undefined) output.layoutWeight = flex;
@@ -756,14 +761,14 @@ export const CheckBox = createHostComponent<CheckBoxProps>('CheckBox', mapCompou
 export const RadioButton = createHostComponent<RadioButtonProps>('RadioButton', mapCompoundButtonLike);
 export const Space = createHostComponent<SpaceProps>('Space', mapViewLike);
 
-export const HStack = (props: ViewProps) => React.createElement(View, normalizeProps({ ...props, flexDirection: 'row' }, mapViewLike));
-HStack.displayName = 'HStack';
+export const HorizontalStackLayout = (props: ViewProps) => React.createElement(View, normalizeProps({ ...props, flexDirection: 'row' }, mapViewLike));
+HorizontalStackLayout.displayName = 'HorizontalStackLayout';
 
-export const VStack = (props: ViewProps) => React.createElement(View, normalizeProps({ ...props, flexDirection: 'column' }, mapViewLike));
-VStack.displayName = 'VStack';
+export const VerticalStackLayout = (props: ViewProps) => React.createElement(View, normalizeProps({ ...props, flexDirection: 'column' }, mapViewLike));
+VerticalStackLayout.displayName = 'VerticalStackLayout';
 
-export const Row = HStack;
-export const Column = VStack;
+export const Row = HorizontalStackLayout;
+export const Column = VerticalStackLayout;
 
 export default {
     View,
@@ -790,8 +795,8 @@ export default {
     CheckBox,
     RadioButton,
     Space,
-    HStack,
-    VStack,
+    HorizontalStackLayout,
+    VerticalStackLayout,
     Row,
     Column,
 };

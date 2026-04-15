@@ -25,10 +25,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.lenerd.spotifyplus.R;
 import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
-import com.lenerd.spotifyplus.module.SpotifyCallback;
-import com.lenerd.spotifyplus.module.SpotifyHook;
-import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
-import com.lenerd.spotifyplus.module.Utils;
+import com.lenerd.spotifyplus.module.*;
 import com.lenerd.spotifyplus.module.entities.SpotifyTrack;
 import com.lenerd.spotifyplus.module.lyrics.AnimatedBackgroundView;
 import com.lenerd.spotifyplus.module.lyrics.LyricUtilities;
@@ -159,7 +156,7 @@ public class LyricsHook extends SpotifyHook {
             try {
                 ViewGroup root = (ViewGroup) activity.getWindow().getDecorView();
                 ReactManager.registerSurface("lyrics-view", root);
-//                SpotifyTrack track = Utils.getTrack(activity.getClassLoader());
+                SpotifyTrack track = Utils.getTrack(activity.getClassLoader());
 
 //                View view = Utils.inflate(activity, R.layout.lyrics_page, root);
 //                TextView titleText = view.findViewById(R.id.text_title);

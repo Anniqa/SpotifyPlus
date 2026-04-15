@@ -101,9 +101,9 @@ export class ScriptRegistry {
         this.menus.set(id, { scriptId, id, menu });
     }
 
-    emitContextMenuPress(scriptId: string, id: string): void {
+    emitContextMenuPress(scriptId: string, id: string, uri: string): void {
         const menu = this.menus.get(id);
-        menu?.menu.onClick();
+        menu?.menu.onClick(uri);
     }
 
     registerSideDrawer(scriptId: string, id: string, item: SideDrawerItem): void {

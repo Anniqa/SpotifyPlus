@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HostRuntime = void 0;
+//@ts-ignore
 const crypto_1 = require("crypto");
 const bridge_1 = require("../bridge/bridge");
 const models_1 = require("../core/models");
@@ -84,7 +85,7 @@ class HostRuntime {
                 }
                 if (packet.name === 'menu.press') {
                     const payload = packet.payload;
-                    this.registry.emitContextMenuPress(payload.scriptId, payload.id);
+                    this.registry.emitContextMenuPress(payload.scriptId, payload.id, payload.uri);
                 }
                 if (packet.name === 'side.press') {
                     const payload = packet.payload;

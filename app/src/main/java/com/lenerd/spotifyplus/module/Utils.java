@@ -19,6 +19,7 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatDelegate;
 import com.lenerd.spotifyplus.R;
+import com.lenerd.spotifyplus.module.entities.SpotifyAlbum;
 import com.lenerd.spotifyplus.module.entities.SpotifyTrack;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindField;
@@ -41,6 +42,8 @@ public final class Utils {
     private static Context wrappedContext;
     private static Typeface cachedTypeface;
     public static String token;
+    public static String clientToken;
+    public static String spotifyVersion;
 
     private static Resources moduleResources;
     private static Context moduleContext;
@@ -65,7 +68,7 @@ public final class Utils {
         if (context == null) return null;
 
         try {
-            if(!vectorCompatEnabled) {
+            if (!vectorCompatEnabled) {
                 AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
                 vectorCompatEnabled = true;
             }
@@ -126,7 +129,8 @@ public final class Utils {
                 string = moduleResources.getString(stringId);
             }
 
-            unloadResources();;
+            unloadResources();
+            ;
             return string;
         } catch (Exception e) {
             Log.e("SpotifyPlus", e.getMessage(), e);
@@ -160,17 +164,18 @@ public final class Utils {
             if (moduleResources != null && moduleLoader != null) {
                 moduleResources.removeLoaders(moduleLoader);
             }
-        } catch(Exception e) {
+        } catch (Exception e) {
             Log.e("SpotifyPlus", e.getMessage(), e);
         } finally {
             moduleResources = null;
             moduleContext = null;
             moduleLoader = null;
 
-            if(moduleProvider != null) {
+            if (moduleProvider != null) {
                 try {
                     moduleProvider.close();
-                } catch (Exception ignored) { }
+                } catch (Exception ignored) {
+                }
                 moduleProvider = null;
             }
         }
@@ -336,11 +341,16 @@ public final class Utils {
                     Map<String, String> metadata = (Map<String, String>) metadataMethod.invoke(track);
                     if (metadata == null) return null;
 
+                    Log.d("SpotifyPlus", "==== METADATA ====");
+                    metadata.forEach((key, value) -> Log.d("SpotifyPlus", key + " | " + value));
+                    Log.d("SpotifyPlus", "==================");
+
                     String title = metadata.get("title");
                     String artist = metadata.get("artist_name");
                     String album = metadata.get("album_title");
                     String color = metadata.get("extracted_color");
                     String imageId = metadata.get("image_large_url");
+                    String trackNumber = metadata.get("album_track_number");
                     long position = 0;
                     long timestamp = 0;
                     boolean saved = false;
@@ -349,10 +359,11 @@ public final class Utils {
                         saved = Boolean.parseBoolean(savedValue);
                     }
 
+                    SpotifyAlbum albumObj = new SpotifyAlbum(album, artist, null, "https://i.scdn.co/image/" + imageId);
                     Method positionMethod = playerState.getClass().getMethod("positionAsOfTimestamp");
                     Object posOpt = positionMethod.invoke(playerState);
                     if (posOpt == null) {
-                        return new SpotifyTrack(title, artist, album, uri, -1, color, -1, imageId, -1, saved);
+                        return new SpotifyTrack(title, artist, new String[]{artist}, albumObj, uri, -1, color, -1, imageId, -1, saved, false, Integer.parseInt(trackNumber));
                     }
 
                     Matcher m = DIGITS.matcher(posOpt.toString());
@@ -362,7 +373,7 @@ public final class Utils {
                         position = basePos + (System.currentTimeMillis() - timestamp);
                     }
 
-                    return new SpotifyTrack(title, artist, album, uri, position, color, timestamp, imageId, 0, saved);
+                    return new SpotifyTrack(title, artist, new String[]{artist}, albumObj, uri, position, color, timestamp, imageId, 0, saved, false, Integer.parseInt(trackNumber));
                 }
             }
         } catch (Exception e) {
@@ -460,21 +471,32 @@ public final class Utils {
             this.cl = moduleCl;
         }
 
-        @Override public Resources getResources() { return res; }
-        @Override public AssetManager getAssets() { return am; }
-        @Override public ClassLoader getClassLoader() { return cl; }
+        @Override
+        public Resources getResources() {
+            return res;
+        }
+
+        @Override
+        public AssetManager getAssets() {
+            return am;
+        }
+
+        @Override
+        public ClassLoader getClassLoader() {
+            return cl;
+        }
 
         public static Resources createMergedResources(Context hostContext, String... apkPaths) throws Exception {
             AssetManager mergedAm = AssetManager.class.getDeclaredConstructor().newInstance();
 
             Method addAssetPath = AssetManager.class.getMethod("addAssetPath", String.class);
             boolean any = false;
-            for(String p : apkPaths) {
+            for (String p : apkPaths) {
                 int cookie = (Integer) addAssetPath.invoke(mergedAm, p);
-                if(cookie != 0) any = true;
+                if (cookie != 0) any = true;
             }
 
-            if(!any) {
+            if (!any) {
                 throw new IllegalStateException("None of the provided asset paths were added successfully");
             }
 

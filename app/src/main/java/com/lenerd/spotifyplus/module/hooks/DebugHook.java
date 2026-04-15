@@ -1,5 +1,7 @@
 package com.lenerd.spotifyplus.module.hooks;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
@@ -15,7 +17,7 @@ public class DebugHook extends SpotifyHook {
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
         ScriptManager.registerHandler("ui", this);
-        ScriptManager.registerHandler("track", this);
+        ScriptManager.registerHandler("system", this);
     }
 
     @Override
@@ -35,6 +37,11 @@ public class DebugHook extends SpotifyHook {
 
                 Handler handler = new Handler(Looper.getMainLooper());
                 handler.post(() -> Toast.makeText(currentActivity, text, length.equals("long") ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show());
+            } else if(command.equals("openUri")) {
+                String uri = json.getString("uri");
+                if(currentActivity == null) return;
+
+                currentActivity.startActivity(new Intent(Intent.ACTION_VIEW).setData(Uri.parse(uri)));
             }
         } catch (Exception e) {
             logError(e);

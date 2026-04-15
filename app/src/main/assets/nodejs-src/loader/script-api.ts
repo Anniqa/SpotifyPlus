@@ -1,5 +1,5 @@
 import { EventHandler, SurfaceRenderer } from "./script-registry";
-import { ContextMenu, MenuItemDefinition, OnClickCallback, PlatformData, Session, ShouldAddCallback, SideDrawerItem, SideOnClickCallback, SpotifyTrack, Surface } from "../core/models";
+import { ContextMenu, MenuItemDefinition, OnClickCallback, PlatformData, Session, ShouldAddCallback, SideDrawerItem, SideOnClickCallback, SpotifyTrack, SpotifyTrackData, Surface } from "../core/models";
 import { Logger } from "../core/logger";
 import { HostRuntime } from "./host-runtime";
 import React from "react";
@@ -42,7 +42,7 @@ export interface SpotifyPlusApi {
 
     request<TPayload = unknown>(name: string, payload?: unknown): Promise<TPayload>;
     toast(text: string, length?: 'short' | 'long'): void;
-    openUrl(url: string): void;
+    openUri(uri: string): void;
     emit(eventName: string, payload?: unknown): void;
 
     Platform: {
@@ -50,12 +50,19 @@ export interface SpotifyPlusApi {
         Session: Session;
         Storage: {
             set(key: string, value: any): void;
-            get(key: string): any;
+            get<T = any>(key: string): Promise<T | null>;
             remove(key: string): void;
+
+            write(path: string, value: string): void;
             write<T = any>(path: string, value: T): void;
-            write<T = Uint8Array>(path: string, data: Uint8Array): void;
-            read<T = any>(path: string): Promise<T | Uint8Array | null>;
+            write(path: string, data: Uint8Array | ArrayBuffer): void;
+
+            read<T = any>(path: string): Promise<T | string | Uint8Array | null>;
         }
+    }
+
+    Internal: {
+        getTrack(uri: string): Promise<SpotifyTrack | null>;
     }
 
     Player: {
@@ -126,38 +133,81 @@ export class ScriptApiFactory {
             off: (eventName, handler) => this.runtime.registry.off(scriptId, eventName, handler),
             request: (name, payload = {}) => this.runtime.request(name, payload),
             toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length }),
-            openUrl: url => this.runtime.sendCommand('system.openUrl', { url }),
+            openUri: uri => this.runtime.sendCommand('system.openUri', { uri }),
             emit: (eventName, payload = {}) => this.runtime.sendEvent(eventName, payload),
             Platform: {
                 PlatformData: this.runtime.platformData,
                 Session: this.runtime.session,
                 Storage: {
                     set: (key, value) => this.runtime.sendCommand('storage.set', { scriptId, key, value }),
-                    get: async (key) => {
-                        const payload = await this.runtime.request('storage.get', { scriptId, key });
-                        return payload ? payload : null;
-                    },
-                    remove: (key) => this.runtime.sendCommand('storage.remove', { scriptId, key }),
-                    write: <T = any>(path: string, value: T): void => {
-                        this.runtime.sendCommand('storage.write', { scriptId, path, value });
-                    },
-                    // write: <T = Uint8Array>(path: string, data: Uint8Array): void => {
-                    //     const bytes = Buffer.from(data).toString('base64');
-                    //     this.runtime.sendCommand('storage.writeBinary', { scriptId, path, data: bytes });
-                    // },
-                    read: async <T = any>(path: string): Promise<T | Uint8Array | null> => {
-                        const payload = await this.runtime.request('storage.read', { scriptId, path }) as { data: T | string | null };
-                        if (!payload.data) return null;
 
-                        if (typeof payload.data === 'string') {
-                            //@ts-ignore
-                            return Uint8Array.from(Buffer.from(payload.data, 'base64'));
-                        } else if (typeof payload.data === 'object') {
-                            return payload.data as T;
+                    get: async <T = any>(key: string): Promise<T | null> => {
+                        const payload = await this.runtime.request<{ value?: T }>('storage.get', { scriptId, key });
+                        return payload && Object.prototype.hasOwnProperty.call(payload, 'value')
+                            ? payload.value ?? null
+                            : null;
+                    },
+
+                    remove: (key) => this.runtime.sendCommand('storage.remove', { scriptId, key }),
+
+                    write: <T = any>(path: string, value: T): void => {
+                        if (isBinaryLike(value)) {
+                            this.runtime.sendCommand('storage.write', {
+                                scriptId,
+                                path,
+                                type: 'binary',
+                                data: toBase64(value)
+                            });
+                            return;
                         }
+
+                        if (typeof value === 'string') {
+                            this.runtime.sendCommand('storage.write', {
+                                scriptId,
+                                path,
+                                type: 'text',
+                                value
+                            });
+                            return;
+                        }
+
+                        this.runtime.sendCommand('storage.write', {
+                            scriptId,
+                            path,
+                            type: 'json',
+                            value
+                        });
+                    },
+
+                    read: async <T = any>(path: string): Promise<T | string | Uint8Array | null> => {
+                        const payload = await this.runtime.request<{
+                            type?: 'text' | 'json' | 'binary';
+                            value?: T | string | null;
+                            data?: string | null;
+                        }>('storage.read', { scriptId, path });
+
+                        if (!payload) return null;
+
+                        if (payload.type === 'binary') {
+                            return payload.data ? fromBase64(payload.data) : null;
+                        }
+
+                        if (payload.type === 'json' || payload.type === 'text') {
+                            return payload.value ?? null;
+                        }
+
+                        // fallback for older responses
+                        if (typeof payload.data === 'string') return fromBase64(payload.data);
+                        if (Object.prototype.hasOwnProperty.call(payload, 'value')) return payload.value ?? null;
 
                         return null;
                     }
+                }
+            },
+            Internal: {
+                getTrack: async (uri: string) => {
+                    const payload = await this.runtime.request<SpotifyTrackData | null>('internal.getTrack', { uri });
+                    return payload ? SpotifyTrack.from(payload) : null;
                 }
             },
             Player: {
@@ -209,6 +259,27 @@ function formatLogArgs(args: unknown[]): string {
             return String(arg);
         }
     }).join(' ');
+}
+
+function isBinaryLike(value: unknown): value is Uint8Array | ArrayBuffer | ArrayBufferView {
+    return value instanceof Uint8Array || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+}
+
+function toUint8Array(value: Uint8Array | ArrayBuffer | ArrayBufferView): Uint8Array {
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+}
+
+function toBase64(value: Uint8Array | ArrayBuffer | ArrayBufferView): string {
+    const bytes = toUint8Array(value);
+    // @ts-ignore
+    return Buffer.from(bytes).toString('base64');
+}
+
+function fromBase64(value: string): Uint8Array {
+    // @ts-ignore
+    return Uint8Array.from(Buffer.from(value, 'base64'));
 }
 
 export declare const SpotifyPlus: SpotifyPlusApi;

@@ -1,7 +1,8 @@
+//@ts-ignore
 import { randomUUID } from "crypto";
 import { Bridge } from '../bridge/bridge';
 import { Logger } from "../core/logger";
-import { GetProgressData, ItemPress, PlatformData, Session, SpotifyTrack, SpotifyTrackData, Surface } from "../core/models";
+import { GetProgressData, PlatformData, Session, SpotifyTrack, SpotifyTrackData, Surface } from "../core/models";
 import { ErrorPacket, Packet, ResponsePacket } from "../core/protocol";
 import { ScriptRegistry } from "./script-registry";
 import { clearCommitListener, dispatchReactEvent, setCommitListener } from "../ui/renderer";
@@ -105,11 +106,11 @@ export class HostRuntime {
                     this.session = packet.payload as Session;
                 }
                 if (packet.name === 'menu.press') {
-                    const payload = packet.payload as ItemPress;
-                    this.registry.emitContextMenuPress(payload.scriptId, payload.id);
+                    const payload = packet.payload as { scriptId: string; id: string, uri: string };
+                    this.registry.emitContextMenuPress(payload.scriptId, payload.id, payload.uri);
                 }
                 if (packet.name === 'side.press') {
-                    const payload = packet.payload as ItemPress;
+                    const payload = packet.payload as { scriptId: string; id: string };
                     const items = this.registry.getSideDrawerItems();
                     const item = items.get(payload.id);
 
@@ -124,7 +125,7 @@ export class HostRuntime {
                     // this.registry.emitSideDrawerPress(payload.scriptId, payload.id);
                 }
                 if (packet.name === 'side.close') {
-                    const payload = packet.payload as ItemPress;
+                    const payload = packet.payload as { scriptId: string; id: string };
 
                     this.registry.unmountSurface(payload.scriptId, 'sideDrawer');
                     clearCommitListener('sideDrawer');

@@ -2,29 +2,69 @@ import React from "react";
 import { SpotifyPlusApi } from "../loader/script-api";
 
 export interface SpotifyTrackData {
+    title: string;
+    trackNumber: number;
+    durationMs: number;
+    explicit: boolean;
     uri: string;
+    artist: string;
+    artists: string[];
+    album: SpotifyAlbumData;
+}
+
+export interface SpotifyAlbumData {
     title: string;
     artist: string;
-    album: string;
-    durationMs: number;
-    artworkUrl: string;
+    release?: Date;
+    image: string;
+}
+
+export class SpotifyAlbum {
+    readonly title: string;
+    readonly artist: string;
+    readonly release?: Date;
+    readonly image: string;
+
+    constructor(title: string, artist: string, image: string, release?: Date) {
+        this.title = title;
+        this.artist = artist;
+        this.release = release;
+        this.image = image;
+    }
+
+    static from(data: SpotifyAlbumData): SpotifyAlbum {
+        return new SpotifyAlbum(data.title, data.artist, data.image, data.release);
+    }
+
+    toJSON(): SpotifyAlbumData {
+        return {
+            title: this.title,
+            artist: this.artist,
+            release: this.release,
+            image: this.image
+        };
+    }
 }
 
 export class SpotifyTrack {
-    readonly uri: string;
     readonly title: string;
-    readonly artist: string;
-    readonly album: string;
+    readonly trackNumber: number;
     readonly durationMs: number;
-    readonly artworkUrl: string;
+    readonly explicit: boolean;
+    readonly uri: string;
+    readonly artist: string;
+    readonly artists: string[];
+    readonly album: SpotifyAlbumData;
 
     constructor(data: SpotifyTrackData) {
         this.uri = data.uri;
         this.title = data.title;
+        this.trackNumber = data.trackNumber;
         this.artist = data.artist;
+        this.artists = data.artists;
         this.album = data.album;
         this.durationMs = data.durationMs;
-        this.artworkUrl = data.artworkUrl;
+        this.explicit = data.explicit;
     }
 
     static from(data: SpotifyTrackData): SpotifyTrack {
@@ -37,12 +77,14 @@ export class SpotifyTrack {
 
     toJSON(): SpotifyTrackData {
         return {
-            uri: this.uri,
             title: this.title,
+            trackNumber: this.trackNumber,
+            durationMs: this.durationMs,
+            explicit: this.explicit,
+            uri: this.uri,
             artist: this.artist,
             album: this.album,
-            durationMs: this.durationMs,
-            artworkUrl: this.artworkUrl
+            artists: this.artists
         };
     }
 }
@@ -73,13 +115,8 @@ export interface Session {
     accessToken: string;
 }
 
-export interface ItemPress {
-    id: string;
-    scriptId: string;
-}
-
 export type ContextMenuRegister = (menu: ContextMenu) => void;
-export type OnClickCallback = () => void;
+export type OnClickCallback = (uri: string) => void;
 export type ShouldAddCallback = (uri: string, contextUri: string) => boolean;
 
 export class ContextMenu {

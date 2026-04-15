@@ -52,5 +52,6 @@ public class SpotifyLoader extends XposedModule {
         new StorageHook().init(this, param, bridge);
         new ReactManager().init(this, param, bridge);
         new TestHook().init(this, param, bridge);
+        new SpotifyApi().init(this, param, bridge);
     }
 }

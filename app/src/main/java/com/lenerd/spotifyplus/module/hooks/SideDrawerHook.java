@@ -351,7 +351,9 @@ public class SideDrawerHook extends SpotifyHook {
             }
 
             if (member == invokeSuspendMethod) {
-                ReactManager.registerSurfaceSilent("sideDrawer", (ViewGroup) currentActivity.get().getWindow().getDecorView());
+                try {
+                    ReactManager.registerSurfaceSilent("sideDrawer", (ViewGroup) currentActivity.get().getWindow().getDecorView());
+                } catch(Exception ignored) {}
 
                 Object[] originalItemsWithNull = (Object[]) sideDrawerArrayField.get(callback.getThisObject());
                 if (originalItemsWithNull == null) return;

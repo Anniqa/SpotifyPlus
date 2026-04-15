@@ -3,6 +3,7 @@ package com.lenerd.spotifyplus.module.scripting;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.text.*;
 import android.util.Log;
 import android.util.TypedValue;
@@ -565,9 +566,8 @@ public class UiSurfaceHost {
         if (props.has("fitsSystemWindows"))
             view.setFitsSystemWindows(parseBoolean(props.opt("fitsSystemWindows"), view.getFitsSystemWindows()));
         if (props.has("tag")) view.setTag(String.valueOf(props.opt("tag")));
-        if (props.has("backgroundColor")) {
-            Integer color = parseColor(props.opt("backgroundColor"));
-            if (color != null) view.setBackgroundColor(color);
+        if (props.has("backgroundColor") || props.has("borderRadius")) {
+            applyBackgroundProps(view, props);
         }
         if (props.has("textAlignment")) view.setTextAlignment(parseTextAlignment(props.optString("textAlignment", "")));
 
@@ -591,6 +591,23 @@ public class UiSurfaceHost {
         }
 
         applyPadding(view, props);
+    }
+
+    private void applyBackgroundProps(View view, JSONObject props) {
+        Integer color = props.has("backgroundColor") ? parseColor(props.opt("backgroundColor")) : null;
+        int radius = props.has("borderRadius") ? parseSize(props.opt("borderRadius"), 0) : 0;
+
+        if (color == null && radius <= 0) return;
+
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setColor(color != null ? color : Color.TRANSPARENT);
+
+        if (radius > 0) {
+            drawable.setCornerRadius(radius);
+        }
+
+        view.setBackground(drawable);
     }
 
     private void applyPadding(View view, JSONObject props) throws Exception {
@@ -857,7 +874,7 @@ public class UiSurfaceHost {
     }
 
     private int defaultWidth(View view) {
-        return isContainer(view) ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT;
+        return ViewGroup.LayoutParams.WRAP_CONTENT;
     }
 
     private int defaultHeight(View view) {

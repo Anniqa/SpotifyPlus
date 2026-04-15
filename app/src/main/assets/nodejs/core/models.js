@@ -1,14 +1,36 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Uri = exports.SideDrawerItem = exports.ContextMenu = exports.SpotifyTrack = void 0;
+exports.Uri = exports.SideDrawerItem = exports.ContextMenu = exports.SpotifyTrack = exports.SpotifyAlbum = void 0;
+class SpotifyAlbum {
+    constructor(title, artist, image, release) {
+        this.title = title;
+        this.artist = artist;
+        this.release = release;
+        this.image = image;
+    }
+    static from(data) {
+        return new SpotifyAlbum(data.title, data.artist, data.image, data.release);
+    }
+    toJSON() {
+        return {
+            title: this.title,
+            artist: this.artist,
+            release: this.release,
+            image: this.image
+        };
+    }
+}
+exports.SpotifyAlbum = SpotifyAlbum;
 class SpotifyTrack {
     constructor(data) {
         this.uri = data.uri;
         this.title = data.title;
+        this.trackNumber = data.trackNumber;
         this.artist = data.artist;
+        this.artists = data.artists;
         this.album = data.album;
         this.durationMs = data.durationMs;
-        this.artworkUrl = data.artworkUrl;
+        this.explicit = data.explicit;
     }
     static from(data) {
         return new SpotifyTrack(data);
@@ -18,12 +40,14 @@ class SpotifyTrack {
     }
     toJSON() {
         return {
-            uri: this.uri,
             title: this.title,
+            trackNumber: this.trackNumber,
+            durationMs: this.durationMs,
+            explicit: this.explicit,
+            uri: this.uri,
             artist: this.artist,
             album: this.album,
-            durationMs: this.durationMs,
-            artworkUrl: this.artworkUrl
+            artists: this.artists
         };
     }
 }

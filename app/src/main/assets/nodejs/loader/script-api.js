@@ -47,7 +47,7 @@ class ScriptApiFactory {
             off: (eventName, handler) => this.runtime.registry.off(scriptId, eventName, handler),
             request: (name, payload = {}) => this.runtime.request(name, payload),
             toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length }),
-            openUrl: url => this.runtime.sendCommand('system.openUrl', { url }),
+            openUri: uri => this.runtime.sendCommand('system.openUri', { uri }),
             emit: (eventName, payload = {}) => this.runtime.sendEvent(eventName, payload),
             Platform: {
                 PlatformData: this.runtime.platformData,
@@ -56,29 +56,60 @@ class ScriptApiFactory {
                     set: (key, value) => this.runtime.sendCommand('storage.set', { scriptId, key, value }),
                     get: async (key) => {
                         const payload = await this.runtime.request('storage.get', { scriptId, key });
-                        return payload ? payload : null;
+                        return payload && Object.prototype.hasOwnProperty.call(payload, 'value')
+                            ? payload.value ?? null
+                            : null;
                     },
                     remove: (key) => this.runtime.sendCommand('storage.remove', { scriptId, key }),
                     write: (path, value) => {
-                        this.runtime.sendCommand('storage.write', { scriptId, path, value });
+                        if (isBinaryLike(value)) {
+                            this.runtime.sendCommand('storage.write', {
+                                scriptId,
+                                path,
+                                type: 'binary',
+                                data: toBase64(value)
+                            });
+                            return;
+                        }
+                        if (typeof value === 'string') {
+                            this.runtime.sendCommand('storage.write', {
+                                scriptId,
+                                path,
+                                type: 'text',
+                                value
+                            });
+                            return;
+                        }
+                        this.runtime.sendCommand('storage.write', {
+                            scriptId,
+                            path,
+                            type: 'json',
+                            value
+                        });
                     },
-                    // write: <T = Uint8Array>(path: string, data: Uint8Array): void => {
-                    //     const bytes = Buffer.from(data).toString('base64');
-                    //     this.runtime.sendCommand('storage.writeBinary', { scriptId, path, data: bytes });
-                    // },
                     read: async (path) => {
                         const payload = await this.runtime.request('storage.read', { scriptId, path });
-                        if (!payload.data)
+                        if (!payload)
                             return null;
-                        if (typeof payload.data === 'string') {
-                            //@ts-ignore
-                            return Uint8Array.from(Buffer.from(payload.data, 'base64'));
+                        if (payload.type === 'binary') {
+                            return payload.data ? fromBase64(payload.data) : null;
                         }
-                        else if (typeof payload.data === 'object') {
-                            return payload.data;
+                        if (payload.type === 'json' || payload.type === 'text') {
+                            return payload.value ?? null;
                         }
+                        // fallback for older responses
+                        if (typeof payload.data === 'string')
+                            return fromBase64(payload.data);
+                        if (Object.prototype.hasOwnProperty.call(payload, 'value'))
+                            return payload.value ?? null;
                         return null;
                     }
+                }
+            },
+            Internal: {
+                getTrack: async (uri) => {
+                    const payload = await this.runtime.request('internal.getTrack', { uri });
+                    return payload ? models_1.SpotifyTrack.from(payload) : null;
                 }
             },
             Player: {
@@ -128,4 +159,23 @@ function formatLogArgs(args) {
             return String(arg);
         }
     }).join(' ');
+}
+function isBinaryLike(value) {
+    return value instanceof Uint8Array || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+}
+function toUint8Array(value) {
+    if (value instanceof Uint8Array)
+        return value;
+    if (value instanceof ArrayBuffer)
+        return new Uint8Array(value);
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+}
+function toBase64(value) {
+    const bytes = toUint8Array(value);
+    // @ts-ignore
+    return Buffer.from(bytes).toString('base64');
+}
+function fromBase64(value) {
+    // @ts-ignore
+    return Uint8Array.from(Buffer.from(value, 'base64'));
 }

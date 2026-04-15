@@ -66,7 +66,7 @@ public class ContextMenuHook extends SpotifyHook {
     private static Method replaceResourceIdMethod;
 
     private final List<ScriptContextMenu> scriptMenus = new ArrayList<>();
-    private int idToUse = 0x7f1313b3;
+    private int idToUse = 2131957898;
 
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
@@ -153,6 +153,17 @@ public class ContextMenuHook extends SpotifyHook {
                 Object jff = callback.getArgs()[0];
                 if (jff == null || jff.getClass() != jffClass) return;
 
+                for (int i = 0; i < callback.getArgs().length; i++) {
+                    var obj = callback.getArgs()[i];
+
+                    if(obj.getClass().getName().equals("p.yqf")) {
+                        Object vqf = obj.getClass().getDeclaredField("a").get(obj);
+
+                        String a = (String) vqf.getClass().getDeclaredField("a").get(vqf);
+                        String c = (String) vqf.getClass().getDeclaredField("c").get(vqf);
+                    }
+                }
+
                 String username = SpotifyPlusSettings.lastfmUsername;
                 if (username.equals("null")) return;
 
@@ -232,6 +243,11 @@ public class ContextMenuHook extends SpotifyHook {
                 List<?> list = (List<?>) callback.getArgs()[1];
                 if (list == null) return;
 
+                String uri = captureContextMenuUri(list);
+                if (uri != null) {
+                    lastContextMenuUri = uri;
+                }
+
                 if (cachedOriginalViewModel == null && list.size() >= 3) {
                     Object probablyAddToPlaylist = list.get(3);
                     cachedOriginalViewModel = probablyAddToPlaylist.getClass().getMethod("getViewModel").invoke(probablyAddToPlaylist);
@@ -301,8 +317,6 @@ public class ContextMenuHook extends SpotifyHook {
 
                     viewModel = ctor.newInstance(menu.id, title, null, hgf, y6y0, booleans[0], booleans[1], booleans[2], h0y0, 1988);
                     idToUse++;
-
-//                    cachedViewModel = viewModel;
                 }
 
                 callback.returnAndSkip(viewModel);
@@ -318,6 +332,7 @@ public class ContextMenuHook extends SpotifyHook {
                     JSONObject json = new JSONObject();
                     json.put("id", menu.id);
                     json.put("scriptId", menu.scriptId);
+                    json.put("uri", lastContextMenuUri);
 
                     BridgeClient.send("", "event", "menu.press", json);
 
@@ -525,5 +540,77 @@ public class ContextMenuHook extends SpotifyHook {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    private static volatile String lastContextMenuUri;
+
+    private String captureContextMenuUri(List<?> items) {
+        if (items == null) return null;
+
+        String[] preferredKeys = {
+                "share",
+                "add_to_playlist",
+                "queue_track",
+                "queue_album",
+                "album_browse",
+                "artist_browse",
+                "radio_go_to_station",
+                "jam_start"
+        };
+
+        for (String key : preferredKeys) {
+            for (Object item : items) {
+                try {
+                    Method getViewModel = item.getClass().getMethod("getViewModel");
+                    Object vm = getViewModel.invoke(item);
+                    if (vm == null) continue;
+
+                    Field a = vm.getClass().getDeclaredField("a");
+                    a.setAccessible(true);
+                    Object value = a.get(vm);
+                    if (!(value instanceof String vmKey)) continue;
+                    if (!vmKey.equals(key)) continue;
+
+                    String uri = findDirectSpotifyUri(item);
+                    if (uri != null) return uri;
+                } catch (Throwable ignored) { }
+            }
+        }
+
+        return null;
+    }
+
+    private String findDirectSpotifyUri(Object item) {
+        if (item == null) return null;
+
+        Class<?> c = item.getClass();
+        while (c != null && c != Object.class) {
+            for (Field f : c.getDeclaredFields()) {
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(item);
+                    if (v == null) continue;
+
+                    String s = String.valueOf(v);
+                    if (isEntityUri(s)) return s;
+                } catch (Throwable ignored) { }
+            }
+            c = c.getSuperclass();
+        }
+
+        return null;
+    }
+
+    private boolean isEntityUri(String s) {
+        if (s == null || !s.startsWith("spotify:")) return false;
+        if (s.equals("spotify:debug")) return false;
+        if (s.startsWith("spotify:now-playing-view")) return false;
+
+        return s.startsWith("spotify:track:") ||
+                s.startsWith("spotify:album:") ||
+                s.startsWith("spotify:artist:") ||
+                s.startsWith("spotify:playlist:") ||
+                s.startsWith("spotify:episode:") ||
+                s.startsWith("spotify:show:");
     }
 }

@@ -92,6 +92,7 @@ public class NetworkHook extends SpotifyHook {
 
                 PackageManager pm = activity.getPackageManager();
                 PackageInfo info = pm.getPackageInfo(activity.getPackageName(), 0);
+                Utils.spotifyVersion = info.versionName;
 
                 JSONObject platform = new JSONObject();
                 platform.put("clientVersion", info.versionName);
@@ -133,11 +134,16 @@ public class NetworkHook extends SpotifyHook {
 
                         BridgeClient.send("", "event", "event.updateToken", new JSONObject().put("accessToken", token));
                     }
+                } else if (headerName != null && headerName.equals("client-token") && headerValue != null && !headerValue.isEmpty()) {
+                    if (Utils.clientToken == null || !Utils.clientToken.equals(headerValue)) {
+                        Utils.clientToken = headerValue;
+                    }
                 }
-            } catch(Exception e) {
+            } catch (Exception e) {
                 logError(e);
             }
         }
+    }
 
 //        if (SpotifyPlusSettings.blockAds) {
 //            try {
@@ -152,7 +158,6 @@ public class NetworkHook extends SpotifyHook {
 //                logError(e);
 //            }
 //        }
-    }
 
     @AfterInvocation
     public static void after(XposedInterface.AfterHookCallback callback) {
