@@ -1,5 +1,5 @@
 import { EventHandler, SurfaceRenderer } from "./script-registry";
-import { ContextMenu, MenuItemDefinition, OnClickCallback, PlatformData, Session, ShouldAddCallback, SideDrawerItem, SideOnClickCallback, SpotifyTrack, SpotifyTrackData, Surface } from "../core/models";
+import { ContextMenu, OnClickCallback, PlatformData, Session, ShouldAddCallback, SideDrawerItem, SideOnClickCallback, SpotifyTrack } from "../core/models";
 import { Logger } from "../core/logger";
 import { HostRuntime } from "./host-runtime";
 import React from "react";
@@ -66,7 +66,7 @@ export interface SpotifyPlusApi {
     }
 
     Player: {
-        getCurrentTrack(): Promise<SpotifyTrack | null>;
+        getCurrentTrack(): SpotifyTrack;
         getProgress(): Promise<number | null>;
         seek(position: number): void;
         play(): void;
@@ -95,134 +95,84 @@ export class ScriptApiFactory {
             constructor(name: string, onClick: OnClickCallback, shouldAdd?: ShouldAddCallback, disabled?: boolean) {
                 super(name, onClick, shouldAdd, disabled, (menu: ContextMenu) => {
                     const id = `${scriptId}:${menu.name}`;
-
                     runtime.registry.registerContextMenu(scriptId, id, menu);
-
-                    runtime.sendCommand("menu.register", {
-                        id,
-                        scriptId,
-                        title: menu.name,
-                        disabled: menu.disabled
-                    });
+                    runtime.registerContextMenu(id, scriptId, menu.name);
+                    // runtime.sendCommand("menu.register", { id, scriptId, title: menu.name, disabled: menu.disabled });
                 });
             }
-        }
+        };
 
         const ScriptSideDrawer = class extends SideDrawerItem {
             constructor(name: string, onClick: SideOnClickCallback) {
                 super(name, onClick, (drawer: SideDrawerItem) => {
                     const id = `${scriptId}:${drawer.name}`;
-
                     runtime.registry.registerSideDrawer(scriptId, id, drawer);
-
-                    runtime.sendCommand("side.register", {
-                        id,
-                        scriptId,
-                        title: drawer.name
-                    });
+                    runtime.registerSideDrawer(id, scriptId, drawer.name);
+                    // runtime.sendCommand("side.register", { id, scriptId, title: drawer.name });
                 });
             }
-        }
+        };
 
         const api: SpotifyPlusApi = {
             scriptId,
             version: 1,
-            log: (...args) => scriptLogger.info(formatLogArgs(args)),
-            warn: (...args) => scriptLogger.warn(formatLogArgs(args)),
-            error: (...args) => scriptLogger.error(formatLogArgs(args)),
+            log: (...args) => this.runtime.log(formatLogArgs(args)),
+            warn: (...args) => this.runtime.log(formatLogArgs(args)),
+            error: (...args) => this.runtime.log(formatLogArgs(args)),
             on: (eventName, handler) => this.runtime.registry.on(scriptId, eventName, handler),
             off: (eventName, handler) => this.runtime.registry.off(scriptId, eventName, handler),
             request: (name, payload = {}) => this.runtime.request(name, payload),
-            toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length }),
-            openUri: uri => this.runtime.sendCommand('system.openUri', { uri }),
+            toast: (text, length = 'short') => this.runtime.toast(text, length),
+            openUri: uri => this.runtime.openUri(uri),
             emit: (eventName, payload = {}) => this.runtime.sendEvent(eventName, payload),
             Platform: {
                 PlatformData: this.runtime.platformData,
                 Session: this.runtime.session,
                 Storage: {
-                    set: (key, value) => this.runtime.sendCommand('storage.set', { scriptId, key, value }),
-
-                    get: async <T = any>(key: string): Promise<T | null> => {
-                        const payload = await this.runtime.request<{ value?: T }>('storage.get', { scriptId, key });
-                        return payload && Object.prototype.hasOwnProperty.call(payload, 'value')
-                            ? payload.value ?? null
-                            : null;
-                    },
-
-                    remove: (key) => this.runtime.sendCommand('storage.remove', { scriptId, key }),
-
+                    set: (key, value) => this.runtime.storageSet(scriptId, key, value),
+                    get: async <T = any>(key: string): Promise<T | null> => this.runtime.storageGet<T>(scriptId, key),
+                    remove: key => this.runtime.storageRemove(scriptId, key),
                     write: <T = any>(path: string, value: T): void => {
                         if (isBinaryLike(value)) {
-                            this.runtime.sendCommand('storage.write', {
-                                scriptId,
-                                path,
-                                type: 'binary',
-                                data: toBase64(value)
-                            });
+                            this.runtime.storageWriteBinary(scriptId, path, toBase64(value));
                             return;
                         }
 
                         if (typeof value === 'string') {
-                            this.runtime.sendCommand('storage.write', {
-                                scriptId,
-                                path,
-                                type: 'text',
-                                value
-                            });
+                            this.runtime.storageWriteText(scriptId, path, value);
                             return;
                         }
 
-                        this.runtime.sendCommand('storage.write', {
-                            scriptId,
-                            path,
-                            type: 'json',
-                            value
-                        });
+                        this.runtime.storageWriteJson(scriptId, path, value);
                     },
-
                     read: async <T = any>(path: string): Promise<T | string | Uint8Array | null> => {
-                        const payload = await this.runtime.request<{
-                            type?: 'text' | 'json' | 'binary';
-                            value?: T | string | null;
-                            data?: string | null;
-                        }>('storage.read', { scriptId, path });
-
+                        const payload = await this.runtime.storageRead<T>(scriptId, path);
                         if (!payload) return null;
 
-                        if (payload.type === 'binary') {
-                            return payload.data ? fromBase64(payload.data) : null;
-                        }
-
-                        if (payload.type === 'json' || payload.type === 'text') {
-                            return payload.value ?? null;
-                        }
-
-                        // fallback for older responses
+                        if (payload.type === 'binary') return payload.data ? fromBase64(payload.data) : null;
+                        if (payload.type === 'json' || payload.type === 'text') return payload.value ?? null;
                         if (typeof payload.data === 'string') return fromBase64(payload.data);
-                        if (Object.prototype.hasOwnProperty.call(payload, 'value')) return payload.value ?? null;
-
-                        return null;
+                        return payload.value ?? null;
                     }
                 }
             },
             Internal: {
-                getTrack: async (uri: string) => {
-                    const payload = await this.runtime.request<SpotifyTrackData | null>('internal.getTrack', { uri });
-                    return payload ? SpotifyTrack.from(payload) : null;
-                }
+                getTrack: async (uri: string) => this.runtime.getTrack(uri)
             },
             Player: {
                 getCurrentTrack: () => this.runtime.getCurrentTrack(),
                 getProgress: () => this.runtime.getProgress(),
-                seek: (position) => this.runtime.seek(position),
-                play: () => this.runtime.togglePlay(true),
-                pause: () => this.runtime.togglePlay(false),
+                seek: position => this.runtime.seek(position),
+                play: () => this.runtime.play(),
+                pause: () => this.runtime.pause(),
                 togglePlay: () => this.runtime.togglePlay(),
-                skipNext: () => this.runtime.sendCommand('player.skipNext', {}),
-                skipPrevious: () => this.runtime.sendCommand('player.skipPrevious', {})
+                skipNext: () => this.runtime.skipNext(),
+                skipPrevious: () => this.runtime.skipPrevious()
             },
             Surfaces: {
-                register: (surfaceType, renderer) => this.runtime.registry.registerSurfaceRenderer(scriptId, surfaceType, renderer)
+                register: (surfaceType, renderer) => {
+                    this.runtime.registry.registerSurfaceRenderer(scriptId, surfaceType, renderer)
+                }
             },
             ContextMenu: ScriptContextMenu,
             SideDrawer: ScriptSideDrawer
@@ -247,7 +197,6 @@ export class ScriptApiFactory {
 
         globals.global = globals;
         globals.globalThis = globals;
-
         return globals;
     }
 }

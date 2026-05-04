@@ -293,8 +293,8 @@ public class LegacyContextMenuHook extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
-
+    public Object handle(String command, Object[] args) {
+        return null;
     }
 
     private View findContextMenuRecycler(ViewGroup root) {

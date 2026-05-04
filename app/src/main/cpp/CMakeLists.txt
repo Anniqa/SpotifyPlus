@@ -10,6 +10,8 @@ set_target_properties(libnode PROPERTIES
 
 add_library(native-lib SHARED
     native-lib.cpp
+    spotifyengine.cpp
+    spotifyplus-exports.cpp
 )
 
 add_library(spotifyplus_bridge SHARED

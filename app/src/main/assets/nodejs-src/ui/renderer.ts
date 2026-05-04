@@ -111,10 +111,8 @@ function normalizeEventPayload(eventName: string, payload: any) {
 }
 
 export function dispatchReactEvent(eventId: number, payload?: any) {
-    console.log('Dispatching react event', { eventId, count: eventHandlers.size });
     const entry = eventHandlers.get(eventId);
     if (!entry) return;
-    console.log('Found react event handler', { eventId, eventName: entry.eventName });
 
     try {
         entry.handler(normalizeEventPayload(entry.eventName, payload));
@@ -319,6 +317,13 @@ let nextId = 1;
 let pendingOps: MutationOp[] = [];
 const nodeSurfaceIds = new Map<number, string>();
 
+type CommitDispatcher = (surfaceId: string, ops: MutationOp[]) => void;
+let commitDispatcher: CommitDispatcher | null = null;
+
+export function setCommitDispatcher(dispatcher: CommitDispatcher | null) {
+    commitDispatcher = dispatcher;
+}
+
 function createId() {
     return nextId++;
 }
@@ -388,9 +393,8 @@ function clearSurfaceId(instance: HostNode | TextNode) {
 }
 
 export function dispatchSurfaceOps(surfaceId: string, ops: MutationOp[]) {
-    const listener = commitListeners.get(surfaceId);
-    if (listener) listener(ops, null);
-    else console.warn('No commit listener for surface ops', surfaceId, ops);
+    if (commitDispatcher) commitDispatcher(surfaceId, ops);
+    else console.warn('No native commit dispatcher for surface ops', surfaceId, ops);
 }
 
 export function dispatchViewCommand(
@@ -453,6 +457,7 @@ function releaseSubtree(instance: HostNode | TextNode | null | undefined) {
     }
 }
 
+const DEBUG_COMMITS = false;
 const hostConfig = {
     supportsMutation: true,
     isPrimaryRenderer: true,
@@ -475,37 +480,29 @@ const hostConfig = {
         return null;
     },
 
+
     resetAfterCommit(container: RootContainer) {
-        const surfaceId = (container as any).__surfaceId as string;
+        const surfaceId = ((container as any).__surfaceId ?? (container as any).surfaceId) as string;
         const ops = pendingOps;
         pendingOps = [];
 
-        const tree = dumpTree(container);
-        const listener = commitListeners.get(surfaceId);
+        // console.log("resetAfterCommit reached", {
+        //     surfaceId,
+        //     opCount: ops.length,
+        //     hasDispatcher: !!commitDispatcher,
+        //     hasListener: commitListeners.has(surfaceId),
+        // });
 
-        console.log("resetAfterCommit", {
-            surfaceId,
-            opCount: ops.length,
-            ops: ops.map(op => ({ op: op.op, ...(op as any).id !== undefined ? { id: (op as any).id } : {}, ...(op as any).childId !== undefined ? { childId: (op as any).childId } : {} })),
-            tree,
-        });
+        if (ops.length === 0) return;
 
-        try {
-            if (listener) listener(ops, tree);
-            else {
-                console.warn('No commit listener for surface ops', surfaceId, ops);
-                console.log('=== UI TREE ===', JSON.stringify(tree, null, 2));
-            }
-        } catch (error: any) {
-            console.error("resetAfterCommit listener threw", {
-                surfaceId,
-                message: error?.message,
-                stack: error?.stack,
-                ops,
-                tree,
-            });
-            throw error;
+        if (commitDispatcher) {
+            commitDispatcher(surfaceId, ops);
+            return;
         }
+
+        const listener = commitListeners.get(surfaceId);
+        if (listener) listener(ops, null);
+        else console.warn('No native commit dispatcher/listener for surface ops', surfaceId, ops);
     },
 
     preparePortalMount() { },
@@ -515,6 +512,8 @@ const hostConfig = {
     },
 
     createInstance(type: string, props: any): HostNode {
+        console.log("createInstance", { type, propsKeys: Object.keys(props ?? {}) });
+
         const processedProps = preprocessProps(props ?? {});
         const { children, ...rest } = processedProps;
         const id = createId();
@@ -526,12 +525,8 @@ const hostConfig = {
             children: [],
         };
 
-        pendingOps.push({
-            op: 'createNode',
-            id: node.id,
-            type: node.type,
-            props: node.props,
-        });
+        pendingOps.push({ op: 'createNode', id: node.id, type: node.type, props: node.props });
+        console.log("createInstance pushed", { id: node.id, type: node.type, pendingOps: pendingOps.length });
 
         return node;
     },
@@ -569,12 +564,16 @@ const hostConfig = {
             surfaceId: (container as any).__surfaceId,
             childId: child.id,
             childType: child.type,
-            rootChildrenBefore: container.children.map(c => ({ id: c.id, type: c.type })),
+            pendingOpsBefore: pendingOps.length,
         });
 
         container.children.push(child);
         assignSurfaceId(child, (container as any).__surfaceId as string);
         pendingOps.push({ op: 'appendToRoot', childId: child.id });
+
+        console.warn("appendChildToContainer pushed", {
+            pendingOpsAfter: pendingOps.length,
+        });
     },
 
     insertBefore(parent: HostNode, child: HostNode | TextNode, beforeChild: HostNode | TextNode) {
@@ -842,6 +841,7 @@ function logReactError(kind: string) {
 export function createRoot(surfaceId: string): RenderRoot {
     const container: RootContainer = { children: [], };
     (container as any).surfaceId = surfaceId;
+    (container as any).__surfaceId = surfaceId;
 
     const root = reconciler.createContainer(container, 0, null, false, null, '', logReactError('uncaught'), logReactError('caught'), logReactError('recoverable'), noop);
 

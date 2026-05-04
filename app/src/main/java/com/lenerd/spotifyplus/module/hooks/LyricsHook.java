@@ -34,6 +34,8 @@ import com.lenerd.spotifyplus.module.lyrics.entities.SyllableVocals;
 import com.lenerd.spotifyplus.module.lyrics.entities.SyncableVocals;
 import com.lenerd.spotifyplus.module.lyrics.entities.interlude.InterludeVisual;
 import com.lenerd.spotifyplus.module.lyrics.entities.lyrics.*;
+import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -155,6 +157,8 @@ public class LyricsHook extends SpotifyHook {
 
             try {
                 ViewGroup root = (ViewGroup) activity.getWindow().getDecorView();
+                SpotifyNativeBridge.sendEvent("lyrics", new JSONObject().put("message", "Hello from the lyrics page!").toString());
+
                 ReactManager.registerSurface("lyrics-view", root);
 //                SpotifyTrack track = Utils.getTrack(activity.getClassLoader());
 
@@ -207,7 +211,8 @@ public class LyricsHook extends SpotifyHook {
             }
         } else if (member.getName().equals("finish")) {
             try {
-                BridgeClient.send("", "event", "react.surfaceClose", new JSONObject().put("surfaceId", "lyrics-view"));
+                SpotifyNativeBridge.sendEvent("react.surfaceEvent", new JSONObject().put("surfaceId", "lyrics-view").toString());
+//                ScriptManager.send("", "event", "react.surfaceClose", new JSONObject().put("surfaceId", "lyrics-view"));
 
                 stop = true;
                 lineSprings.clear();
@@ -243,8 +248,8 @@ public class LyricsHook extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
-
+    public Object handle(String command, Object[] args) {
+        return null;
     }
 
     private void renderLyrics(Activity activity, SpotifyTrack track, LinearLayout lyricsContainer, ViewGroup root) {

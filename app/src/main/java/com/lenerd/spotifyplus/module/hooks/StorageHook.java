@@ -8,6 +8,7 @@ import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.SpotifyCallback;
 import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
@@ -29,197 +30,139 @@ public class StorageHook extends SpotifyHook {
 
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
-        ScriptManager.registerHandler("storage", this);
+        SpotifyNativeBridge.registerHandler("storage", this);
     }
 
     @Override
-    protected void beforeHook(SpotifyCallback callback) { }
-
-    @Override
-    protected void afterHook(SpotifyCallback callback) { }
-
-    @Override
-    public void handle(String id, String command, JSONObject json) {
-        if (command.equals("set")) {
-            handleSet(id, json);
-        } else if (command.equals("get")) {
-            handleGet(id, json);
-        } else if (command.equals("remove")) {
-            handleRemove(id, json);
-        } else if (command.equals("write")) {
-            handleWrite(id, json);
-        } else if (command.equals("read")) {
-            handleRead(id, json);
-        }
+    protected void beforeHook(SpotifyCallback callback) {
     }
 
-    private void handleSet(String id, JSONObject json) {
+    @Override
+    protected void afterHook(SpotifyCallback callback) {
+    }
+
+    @Override
+    public Object handle(String command, Object[] args) {
+        return switch (command) {
+            case "set" -> {
+                handleSet((String) args[0], (String) args[1], args.length > 2 ? args[2] : null);
+                yield null;
+            }
+            case "get" -> handleGet((String) args[0], (String) args[1]);
+            case "remove" -> {
+                handleRemove((String) args[0], (String) args[1]);
+                yield null;
+            }
+            case "writeText" -> {
+                handleWriteText((String) args[0], (String) args[1], (String) args[2]);
+                yield null;
+            }
+            case "writeJson" -> {
+                handleWriteJson((String) args[0], (String) args[1], (String) args[2]);
+                yield null;
+            }
+            case "writeBinary" -> {
+                handleWriteBinary((String) args[0], (String) args[1], (String) args[2]);
+                yield null;
+            }
+            case "read" -> handleRead((String) args[0], (String) args[1]);
+            default -> null;
+        };
+    }
+
+    private void handleSet(String scriptId, String key, Object value) {
         try {
-            if (currentActivity == null) return;
-
-            String scriptId = json.getString("scriptId");
-            String key = json.getString("key");
-            Object value = json.opt("value");
+            if(currentActivity == null) return;
 
             SharedPreferences prefs = currentActivity.getSharedPreferences(scriptId, Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = prefs.edit();
 
-            if (value == null || value == JSONObject.NULL) {
-                editor.remove(key).apply();
-                return;
-            }
-
-            if (value instanceof String s) editor.putString(key, s).apply();
-            else if (value instanceof Boolean b) editor.putBoolean(key, b).apply();
-            else if (value instanceof Integer i) editor.putInt(key, i).apply();
-            else if (value instanceof Long l) editor.putLong(key, l).apply();
-            else if (value instanceof Float f) editor.putFloat(key, f).apply();
-            else if (value instanceof Double d) editor.putString(key, d.toString()).apply();
-            else editor.putString(key, value.toString()).apply();
-        } catch (Exception e) {
+            if(value == null || value == JSONObject.NULL) editor.remove(key).apply();
+            else editor.putString(key, String.valueOf(value)).apply();
+        } catch(Exception e) {
             logError(e);
         }
     }
 
-    private void handleGet(String id, JSONObject json) {
+    private String handleGet(String scriptId, String key) {
         try {
-            if (currentActivity == null) {
-                BridgeClient.send(id, "response", "storage.get", new JSONObject());
-                return;
-            }
-
-            String scriptId = json.getString("scriptId");
-            String key = json.getString("key");
+            if(currentActivity == null) return null;
 
             SharedPreferences prefs = currentActivity.getSharedPreferences(scriptId, Context.MODE_PRIVATE);
             Object value = prefs.getAll().get(key);
-
-            if (value == null) BridgeClient.send(id, "response", "storage.get", new JSONObject());
-            else BridgeClient.send(id, "response", "storage.get", new JSONObject().put("value", value));
-        } catch (Exception e) {
+            return value == null ? null : String.valueOf(value);
+        } catch(Exception e) {
             logError(e);
-            BridgeClient.send(id, "response", "storage.get", new JSONObject());
+            return null;
         }
     }
 
-    private void handleRemove(String id, JSONObject json) {
+    private void handleRemove(String scriptId, String key) {
         try {
-            if (currentActivity == null) return;
-
-            String scriptId = json.getString("scriptId");
-            String key = json.getString("key");
+            if(currentActivity == null) return;
 
             SharedPreferences prefs = currentActivity.getSharedPreferences(scriptId, Context.MODE_PRIVATE);
             prefs.edit().remove(key).apply();
-        } catch (Exception e) {
+        } catch(Exception e) {
             logError(e);
         }
     }
 
-    private void handleWrite(String id, JSONObject json) {
-        try {
-            if (currentActivity == null) return;
-
-            String scriptId = json.getString("scriptId");
-            String scriptPath = json.getString("path");
-
-            File scriptDir = new File(currentActivity.getFilesDir(), scriptId);
-            if (!scriptDir.exists()) scriptDir.mkdirs();
-
-            File file = resolveScriptFile(scriptDir, scriptPath);
-
-            File parent = file.getParentFile();
-            if (parent != null && !parent.exists()) parent.mkdirs();
-
-            String type = json.optString("type", "");
-
-            if (json.has("data")) {
-                String data = json.getString("data");
-                byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
-                Files.write(file.toPath(), bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                writeMetaType(file, TYPE_BINARY);
-                return;
-            }
-
-            Object value = json.opt("value");
-
-            if (TYPE_JSON.equals(type) || value instanceof JSONObject || value instanceof JSONArray ||
-                    value instanceof Boolean || value instanceof Integer || value instanceof Long ||
-                    value instanceof Float || value instanceof Double || value == JSONObject.NULL) {
-
-                String text = value == null || value == JSONObject.NULL ? "null" : value.toString();
-                Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                writeMetaType(file, TYPE_JSON);
-                return;
-            }
-
-            String text = value == null ? "" : String.valueOf(value);
-            Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            writeMetaType(file, TYPE_TEXT);
-        } catch (Exception e) {
-            logError(e);
-        }
+    private void handleWriteText(String scriptId, String scriptPath, String value) {
+        writeFile(scriptId, scriptPath, value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8), TYPE_TEXT);
     }
 
-    private void handleRead(String id, JSONObject json) {
-        try {
-            if (currentActivity == null) {
-                BridgeClient.send(id, "response", "storage.read", new JSONObject());
-                return;
-            }
+    private void handleWriteJson(String scriptId, String scriptPath, String value) {
+        writeFile(scriptId, scriptPath, value == null ? "null".getBytes(StandardCharsets.UTF_8) : value.getBytes(StandardCharsets.UTF_8), TYPE_JSON);
+    }
 
-            String scriptId = json.getString("scriptId");
-            String scriptPath = json.getString("path");
+    private void handleWriteBinary(String scriptId, String scriptPath, String data) {
+        writeFile(scriptId, scriptPath, data == null ? new byte[0] : Base64.decode(data, Base64.NO_WRAP), TYPE_BINARY);
+    }
+
+    private SpotifyNativeBridge.StorageReadResult handleRead(String scriptId, String scriptPath) {
+        try {
+            if(currentActivity == null) return new SpotifyNativeBridge.StorageReadResult();
 
             File scriptDir = new File(currentActivity.getFilesDir(), scriptId);
             File file = resolveScriptFile(scriptDir, scriptPath);
 
-            if (!file.exists() || !file.isFile()) {
-                BridgeClient.send(id, "response", "storage.read", new JSONObject());
-                return;
-            }
+            if(!file.exists() || !file.isFile()) return new SpotifyNativeBridge.StorageReadResult();
 
             byte[] bytes = Files.readAllBytes(file.toPath());
             String type = readMetaType(file);
+            if(type == null || type.isEmpty()) type = isValidUtf8(bytes) ? TYPE_TEXT : TYPE_BINARY;
 
-            if (type == null || type.isEmpty()) {
-                type = isValidUtf8(bytes) ? TYPE_TEXT : TYPE_BINARY;
-            }
-
-            if (TYPE_BINARY.equals(type)) {
+            if(TYPE_BINARY.equals(type)) {
                 String data = Base64.encodeToString(bytes, Base64.NO_WRAP);
-                BridgeClient.send(id, "response", "storage.read",
-                        new JSONObject()
-                                .put("type", TYPE_BINARY)
-                                .put("data", data));
-                return;
+                return new SpotifyNativeBridge.StorageReadResult(true, TYPE_BINARY, null, data);
             }
 
-            String text = new String(bytes, StandardCharsets.UTF_8);
+            String value = new String(bytes, StandardCharsets.UTF_8);
+            if(TYPE_JSON.equals(type)) return new SpotifyNativeBridge.StorageReadResult(true, TYPE_JSON, value, null);
 
-            if (TYPE_JSON.equals(type)) {
-                try {
-                    Object value = new JSONTokener(text).nextValue();
-                    BridgeClient.send(id, "response", "storage.read",
-                            new JSONObject()
-                                    .put("type", TYPE_JSON)
-                                    .put("value", value));
-                } catch (Exception e) {
-                    BridgeClient.send(id, "response", "storage.read",
-                            new JSONObject()
-                                    .put("type", TYPE_TEXT)
-                                    .put("value", text));
-                }
-                return;
-            }
-
-            BridgeClient.send(id, "response", "storage.read",
-                    new JSONObject()
-                            .put("type", TYPE_TEXT)
-                            .put("value", text));
-        } catch (Exception e) {
+            return new SpotifyNativeBridge.StorageReadResult(true, TYPE_TEXT, value, null);
+        } catch(Exception e) {
             logError(e);
-            BridgeClient.send(id, "response", "storage.read", new JSONObject());
+            return new SpotifyNativeBridge.StorageReadResult();
+        }
+    }
+
+    private void writeFile(String scriptId, String scriptPath, byte[] bytes, String type) {
+        try {
+            if(currentActivity == null) return;
+
+            File scriptDir = new File(currentActivity.getFilesDir(), scriptId);
+            if(!scriptDir.exists()) scriptDir.mkdirs();
+
+            File file = resolveScriptFile(scriptDir, scriptPath);
+            File parent = file.getParentFile();
+            if(parent != null && !parent.exists()) parent.mkdirs();
+
+            Files.write(file.toPath(), bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            writeMetaType(file, type);
+        } catch(Exception e) {
+            logError(e);
         }
     }
 

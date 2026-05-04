@@ -24,6 +24,9 @@ import com.lenerd.spotifyplus.BuildConfig;
 import com.lenerd.spotifyplus.R;
 import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.*;
+import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
+import com.lenerd.spotifyplus.module.scripting.entities.PlatformData;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -48,6 +51,7 @@ public class NetworkHook extends SpotifyHook {
     private static final Pattern LEADING_NUMBER = Pattern.compile("^(\\d+)");
     private Method httpBuildMethod;
     private boolean checkedForUpdates = false;
+    private static boolean initialized = false;
 
     @Override
     protected void hookSetup() throws NoSuchMethodException {
@@ -82,25 +86,41 @@ public class NetworkHook extends SpotifyHook {
                 // I know this doesn't really fit, but I'm not sure where else to put it. I'm not creating an entire new class just for this
                 Activity activity = (Activity) callback.getThisObject();
                 SpotifyHook.currentActivity = activity;
-                if (!SpotifyLoader.bridgeInitialized) {
-                    Intent intent = new Intent("com.lenerd.spotifyplus.action.START_BRIDGE");
-                    intent.setClassName("com.lenerd.spotifyplus", "com.lenerd.spotifyplus.manager.bridge.BridgeStartReceiver");
-                    activity.sendBroadcast(intent);
-
-                    SpotifyLoader.bridgeInitialized = true;
-                }
+//                if (!SpotifyLoader.bridgeInitialized) {
+//                    Intent intent = new Intent("com.lenerd.spotifyplus.action.START_BRIDGE");
+//                    intent.setClassName("com.lenerd.spotifyplus", "com.lenerd.spotifyplus.manager.bridge.BridgeStartReceiver");
+//                    activity.sendBroadcast(intent);
+//
+//                    SpotifyLoader.bridgeInitialized = true;
+//                }
 
                 PackageManager pm = activity.getPackageManager();
                 PackageInfo info = pm.getPackageInfo(activity.getPackageName(), 0);
                 Utils.spotifyVersion = info.versionName;
 
-                JSONObject platform = new JSONObject();
-                platform.put("clientVersion", info.versionName);
-                platform.put("osName", "android");
-                platform.put("osVersion", Build.VERSION.RELEASE);
-                platform.put("sdkVersion", Build.VERSION.SDK_INT);
+                Utils.platformData = new PlatformData(info.versionName, "android", Build.VERSION.RELEASE, Build.VERSION.SDK_INT);
 
-                BridgeClient.connect(platform);
+//                JSONObject platform = new JSONObject();
+//                platform.put("clientVersion", info.versionName);
+//                platform.put("osName", "android");
+//                platform.put("osVersion", Build.VERSION.RELEASE);
+//                platform.put("sdkVersion", Build.VERSION.SDK_INT);
+
+                if (!initialized) {
+                    initialized = true;
+
+                    try {
+                        ScriptManager manager = new ScriptManager(activity);
+                        manager.start();
+                    } finally {
+//                        SpotifyNativeBridge.sendEvent("ready", platform.toString());
+                    }
+
+//                    ScriptManager.send("", "event", "event.ready", platform);
+                }
+
+
+//                                BridgeClient.connect(platform);
 
 //                ReactManager.registerSurface("root-view", (ViewGroup) currentActivity.getWindow().getDecorView());
 
@@ -133,7 +153,7 @@ public class NetworkHook extends SpotifyHook {
                         Utils.token = token;
                         log("Access-Token: " + token);
 
-                        BridgeClient.send("", "event", "event.updateToken", new JSONObject().put("accessToken", token));
+                        SpotifyNativeBridge.sendEvent("event.updateToken", new JSONObject().put("accessToken", token).toString());
                     }
                 } else if (headerName != null && headerName.equals("client-token") && headerValue != null && !headerValue.isEmpty()) {
                     if (Utils.clientToken == null || !Utils.clientToken.equals(headerValue)) {
@@ -184,8 +204,8 @@ public class NetworkHook extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
-
+    public Object handle(String command, Object[] args) {
+        return null;
     }
 
     private void loadPreferences(Activity activity) {

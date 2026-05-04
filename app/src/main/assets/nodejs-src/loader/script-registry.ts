@@ -136,7 +136,9 @@ export class ScriptRegistry {
 
     mountSurface(scriptId: string, surface: Surface, element: React.ReactElement): void {
         const root = createRoot(surface.type);
+        console.log("before root.render", { surface, element });
         root.render(element);
+        console.log("after root.render", { surface, children: root.getTree() });
         this.mountedSurfaces.set(`${scriptId}:${surface.id}`, root);
     }
 

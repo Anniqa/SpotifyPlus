@@ -1,12 +1,11 @@
-//@ts-ignore
-import { randomUUID } from "crypto";
+import { randomUUID } from 'crypto';
+import { Logger } from '../core/logger';
 import { Bridge } from '../bridge/bridge';
-import { Logger } from "../core/logger";
-import { GetProgressData, PlatformData, Session, SpotifyTrack, SpotifyTrackData, Surface } from "../core/models";
-import { ErrorPacket, Packet, ResponsePacket } from "../core/protocol";
-import { ScriptRegistry } from "./script-registry";
-import { clearCommitListener, dispatchReactEvent, setCommitListener } from "../ui/renderer";
-import React from "react";
+import { GetProgressData, PlatformData, Session, SpotifyTrack, SpotifyTrackData, Surface } from '../core/models';
+import { ErrorPacket, Packet, ResponsePacket } from '../core/protocol';
+import { ScriptRegistry } from './script-registry';
+import { clearCommitListener, dispatchReactEvent, setCommitDispatcher, setCommitListener } from '../ui/renderer';
+import React from 'react';
 
 interface PendingRequest {
     resolve: (payload: unknown) => void;
@@ -19,11 +18,11 @@ export class HostRuntime {
     private readonly bridge: Bridge;
     private readonly pendingRequests = new Map<string, PendingRequest>();
 
-    private spotifyConnecting: boolean = false;
+    private spotifyConnecting = false;
     private spotifyConnectingWaiters = new Set<(value: boolean) => void>();
 
-    private spotifyReady: boolean = false;
-    private spotifyReadyWaiters = new Set<(ready: boolean) => void>;
+    private spotifyReady = false;
+    private spotifyReadyWaiters = new Set<(ready: boolean) => void>();
 
     public platformData: PlatformData;
     public session: Session;
@@ -39,13 +38,21 @@ export class HostRuntime {
         };
         this.session = {
             accessToken: ''
-        }
+        };
     }
 
     start(): void {
-        this.bridge.startPolling(packet => {
-            void this.handleIncomingPacket(packet);
+        Object.assign(this.platformData, this.bridge.getPlatformData());
+        this.session.accessToken = this.bridge.getAccessToken();
+
+        this.registerEventListeners();
+
+        setCommitDispatcher((surfaceId, ops) => {
+            this.bridge.commitSurface(surfaceId, ops);
         });
+
+        this.bridge.log('Starting script runtime!');
+        console.log(`Access Token: ${this.session.accessToken}`);
     }
 
     sendEvent(name: string, payload: unknown = {}): void {
@@ -70,24 +77,164 @@ export class HostRuntime {
         });
     }
 
-    async getCurrentTrack(): Promise<SpotifyTrack | null> {
-        const payload = await this.request<SpotifyTrackData | null>('player.getCurrent', {});
-        console.log(payload);
-        return payload ? SpotifyTrack.from(payload) : null;
+    getCurrentTrack(): SpotifyTrack {
+        return this.bridge.getCurrentTrack();
     }
 
-    seek(position: number): void {
-        const thing = `${position}`;
-        this.sendCommand('player.seek', { thing });
-    }
-
-    togglePlay(play?: boolean): void {
-        this.sendCommand('player.togglePlay', play ? { play } : {});
+    async getTrack(uri: string): Promise<SpotifyTrack | null> {
+        return this.bridge.getTrack(uri);
     }
 
     async getProgress(): Promise<number | null> {
-        const payload = await this.request<GetProgressData | null>('player.getProgress', {});
-        return payload ? payload.position : -1;
+        return this.bridge.getPlaybackPosition();
+    }
+
+    log(message: string): void {
+        this.bridge.log(message);
+    }
+
+    seek(position: number): void {
+        this.bridge.seek(position);
+    }
+
+    play(): void {
+        this.bridge.play();
+    }
+
+    pause(): void {
+        this.bridge.pause();
+    }
+
+    togglePlay(): void {
+        this.bridge.togglePlay();
+    }
+
+    skipNext(): void {
+        this.bridge.skipNext();
+    }
+
+    skipPrevious(): void {
+        this.bridge.skipPrevious();
+    }
+
+    toast(text: string, length: 'short' | 'long' = 'short'): void {
+        this.bridge.toast(text, length);
+    }
+
+    openUri(uri: string): void {
+        this.bridge.openUri(uri);
+    }
+
+    storageSet(scriptId: string, key: string, value: unknown): void {
+        this.bridge.storageSet(scriptId, key, value);
+    }
+
+    async storageGet<T = any>(scriptId: string, key: string): Promise<T | null> {
+        return this.bridge.storageGet<T>(scriptId, key);
+    }
+
+    storageRemove(scriptId: string, key: string): void {
+        this.bridge.storageRemove(scriptId, key);
+    }
+
+    storageWriteText(scriptId: string, path: string, value: string): void {
+        this.bridge.storageWriteText(scriptId, path, value);
+    }
+
+    storageWriteJson(scriptId: string, path: string, value: unknown): void {
+        this.bridge.storageWriteJson(scriptId, path, value);
+    }
+
+    storageWriteBinary(scriptId: string, path: string, data: string): void {
+        this.bridge.storageWriteBinary(scriptId, path, data);
+    }
+
+    async storageRead<T = any>(scriptId: string, path: string): Promise<{ type?: 'text' | 'json' | 'binary'; value?: T | string | null; data?: string | null } | null> {
+        return this.bridge.storageRead<T>(scriptId, path);
+    }
+
+    registerContextMenu(id: string, scriptId: string, title: string): void {
+        this.bridge.registerContextMenu(id, scriptId, title);
+    }
+
+    registerSideDrawer(id: string, scriptId: string, title: string): void {
+        this.bridge.registerSideDrawer(id, scriptId, title);
+    }
+
+    registerEventListeners(): void {
+        this.bridge.on('menu.press', payload => {
+            const data = payload as { scriptId: string; id: string; uri: string; };
+            if (!data) {
+                this.bridge.log('Failed to read context menu press data');
+                return;
+            }
+
+            this.registry.emitContextMenuPress(data.scriptId, data.id, data.uri);
+        });
+
+        this.bridge.on('side.press', payload => {
+            const data = payload as { scriptId: string; id: string; };
+            if (!data) {
+                this.bridge.log('Failed to read side drawer press data');
+                return;
+            }
+
+            this.registry.emitSideDrawerPress(data.scriptId, data.id);
+        });
+
+        this.bridge.on('side.close', payload => {
+            const data = payload as { scriptId: string; id: string; };
+            if (!data) return;
+            this.registry.unmountSurface(data.scriptId, 'sideDrawer');
+            this.bridge.unregisterSurface('sideDrawer');
+        });
+
+        this.bridge.on('react.surfaceEvent', payload => {
+            const surface = payload as Surface;
+            if (!surface) return;
+
+            const renderers = this.registry.getSurfaceRenderers(surface.id);
+            console.log(`Received react.surfaceEvent | ${renderers.length} | ${surface.id} | ${surface.type}`);
+            for (const renderer of renderers) {
+                try {
+                    const element = renderer.renderer(surface as any);
+                    this.bridge.registerSurface(surface.id);
+
+                    setCommitListener(surface.type, ops => {
+                        this.bridge.commitSurface(surface.id, ops);
+                    });
+
+                    this.registry.mountSurface(renderer.scriptId, surface, element);
+                } catch (error) {
+                    this.bridge.log(`${error}`);
+                }
+            }
+        });
+
+        this.bridge.on('react.surfaceClose', payload => {
+            const data = payload as { surfaceId: string };
+            if (!data?.surfaceId) return;
+            this.registry.unmountAllSurfaces(data.surfaceId);
+            this.bridge.unregisterSurface(data.surfaceId);
+        });
+
+        this.bridge.on('react.event', payload => {
+            const data = payload as { eventId: number; payload: any; targetId: number; surfaceId: string; eventName: string };
+            const eventId = Number(data?.eventId);
+            if (!Number.isFinite(eventId)) return;
+
+            dispatchReactEvent(eventId, {
+                ...(data?.payload ?? {}),
+                targetId: data.targetId,
+                surfaceId: data.surfaceId,
+                eventName: data.eventName,
+            });
+        });
+
+        this.bridge.on('event.updateToken', payload => {
+            const data = payload as Session;
+            Object.assign(this.session, data);
+        });
     }
 
     private async handleIncomingPacket(packet: Packet): Promise<void> {
@@ -100,7 +247,6 @@ export class HostRuntime {
                 }
                 if (packet.name === 'event.ready') {
                     this.markSpotifyReady();
-                    this.logger.info(`${(packet.payload as PlatformData).clientVersion}`);
                     Object.assign(this.platformData, packet.payload as PlatformData);
                 }
                 if (packet.name === 'event.updateToken') {
@@ -123,11 +269,9 @@ export class HostRuntime {
 
                         this.registry.mountSurface(payload.scriptId, { id: 'sideDrawer', type: 'sideDrawer' }, result);
                     }
-                    // this.registry.emitSideDrawerPress(payload.scriptId, payload.id);
                 }
                 if (packet.name === 'side.close') {
                     const payload = packet.payload as { scriptId: string; id: string };
-
                     this.registry.unmountSurface(payload.scriptId, 'sideDrawer');
                     clearCommitListener('sideDrawer');
                 }
@@ -138,7 +282,7 @@ export class HostRuntime {
                     for (const renderer of renderers) {
                         const element = renderer.renderer(payload as any);
                         setCommitListener(payload.type, ops => {
-                            this.sendCommand('react.commit', { surfaceId: payload.id, ops })
+                            this.sendCommand('react.commit', { surfaceId: payload.id, ops });
                         });
 
                         this.registry.mountSurface(renderer.scriptId, payload, element);
@@ -240,25 +384,6 @@ export class HostRuntime {
         }
 
         this.spotifyConnectingWaiters.clear();
-    }
-
-    waitForSpotifyReady(timeoutMs = 15000): Promise<boolean> {
-        if (this.spotifyReady) return Promise.resolve(true);
-
-        return new Promise<boolean>(resolve => {
-            const waiter = (ready: boolean) => {
-                clearTimeout(timeout);
-                this.spotifyReadyWaiters.delete(waiter);
-                resolve(ready);
-            };
-
-            const timeout = setTimeout(() => {
-                this.spotifyReadyWaiters.delete(waiter);
-                resolve(false);
-            }, timeoutMs);
-
-            this.spotifyReadyWaiters.add(waiter);
-        });
     }
 
     private markSpotifyReady(): void {

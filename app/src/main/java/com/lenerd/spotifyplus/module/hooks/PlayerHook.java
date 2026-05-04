@@ -7,6 +7,7 @@ import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.Utils;
 import com.lenerd.spotifyplus.module.entities.SpotifyTrack;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -52,7 +53,7 @@ public class PlayerHook extends SpotifyHook {
 
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
-        ScriptManager.registerHandler("player", this);
+        SpotifyNativeBridge.registerHandler("player", this);
 
         // Seek
         Class<?> requestClass = bridge.findClass(FindClass.create().matcher(ClassMatcher.create().modifiers(Modifier.PUBLIC | Modifier.FINAL).fieldCount(1).addField(FieldMatcher.create().modifiers(Modifier.PUBLIC | Modifier.FINAL).type(long.class)).methods(MethodsMatcher.create()
@@ -187,20 +188,20 @@ public class PlayerHook extends SpotifyHook {
         // Seek
         if (member == seekConstructor) {
             seekInstance = callback.getThisObject();
-        } else if(member == l6r0Ctor) {
+        } else if (member == l6r0Ctor) {
             // Skip
             Object thisObject = callback.getThisObject();
-            if(thisObject == null) return;
+            if (thisObject == null) return;
 
             cachedL6r0 = thisObject;
 
             try {
                 Object jxq = l6r0AField.get(thisObject);
-                if(jxq != null) {
+                if (jxq != null) {
                     cachedJxq = jxq;
 
                     Object ruf = jxqAField.get(jxq);
-                    if(ruf != null) {
+                    if (ruf != null) {
                         cachedRuf = ruf;
                     } else {
                         Log.e("SpotifyPlus", "jxq.a was null");
@@ -208,7 +209,7 @@ public class PlayerHook extends SpotifyHook {
                 } else {
                     Log.e("SpotifyPlus", "l6r0.a was null");
                 }
-            } catch(Throwable t) {
+            } catch (Throwable t) {
                 Log.e("SpotifyPlus", "Failed reading l6r0 -> jxq -> ruf", t);
             }
         }
@@ -216,79 +217,66 @@ public class PlayerHook extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
+    public Object handle(String command, Object[] args) {
         try {
             switch (command) {
-                case "getCurrent" -> {
-                    SpotifyTrack track = Utils.getTrack(classLoader);
-                    if (track == null) return;
-
-                    log("Current track: " + track.title);
-
-                    JSONObject payload = new JSONObject();
-                    payload.put("title", track.title);
-                    payload.put("trackNumber", track.trackNumber);
-                    payload.put("artist", track.artist);
-                    payload.put("artists", track.artists);
-                    payload.put("explicit", track.explicit);
-                    payload.put("uri", track.uri);
-                    payload.put("album", track.album);
-                    payload.put("durationMs", track.duration);
-//                    payload.put("artworkUrl", "https://i.scdn.co/image/" + track.imageId);
-
-                    BridgeClient.send(id, "response", "player.getCurrent", payload);
-                }
                 case "seek" -> {
-                    String position = json.getString("position");
+                    long position = (long) args[0];
                     Object seekArg = null;
+                    seekArg = ctor.newInstance(position * 1000);
 
-                    try {
-                        double percentage = Double.parseDouble(position);
-                        if (percentage > 1) throw new NumberFormatException("Percentage cannot exceed 1");
-
-                        SpotifyTrack track = Utils.getTrack(classLoader);
-
-                        seekArg = ctor.newInstance(track.duration * percentage);
-                    } catch (NumberFormatException ignored) {
-                        seekArg = ctor.newInstance(Long.parseLong(position) * 1000);
-                    } catch (Exception ignored) {
-                    }
+//                    try {
+//                        double percentage = Double.parseDouble(position);
+//                        if (percentage > 1) throw new NumberFormatException("Percentage cannot exceed 1");
+//
+//                        SpotifyTrack track = Utils.getTrack(classLoader);
+//
+//                        seekArg = ctor.newInstance(track.duration * percentage);
+//                    } catch (NumberFormatException ignored) {
+//                        seekArg = ctor.newInstance(Long.parseLong(position) * 1000);
+//                    } catch (Exception ignored) {
+//                    }
 
                     if (seekInstance == null) {
                         logError("Seek instance was null!");
-                        return;
+                        return null;
                     }
 
                     Method method = bridge.findMethod(FindMethod.create().searchInClass(Collections.singletonList(bridge.getClassData(seekInstance.getClass()))).matcher(MethodMatcher.create().paramTypes(ctor.getDeclaringClass().getSuperclass()))).get(0).getMethodInstance(classLoader);
                     Object block = method.invoke(seekInstance, seekArg);
                     if (block == null) {
                         logError("Failed to get block object");
-                        return;
+                        return null;
                     }
 
                     block.getClass().getMethod("blockingGet").invoke(block);
                 }
                 case "getProgress" -> {
                     long position = Utils.getCurrentPlaybackPosition();
-                    BridgeClient.send(id, "response", "player.getProgress", new JSONObject().put("position", position));
+//                    ScriptManager.send(id, "response", "player.getProgress", new JSONObject().put("position", position));
                 }
                 case "getDuration" -> {
                     SpotifyTrack track = Utils.getTrack(classLoader);
-                    BridgeClient.send(id, "response", "player.getDuration", new JSONObject().put("duration", track.duration));
+//                    ScriptManager.send(id, "response", "player.getDuration", new JSONObject().put("duration", track.duration));
                 }
                 case "togglePlay" -> {
-                    if (json.has("play")) {
-                        boolean play = json.getBoolean("play");
-                        togglePlay(play);
-                    } else {
-                        togglePlay();
-                    }
+//                    if (json.has("play")) {
+//                        boolean play = json.getBoolean("play");
+//                        togglePlay(play);
+//                    } else {
+//                        togglePlay();
+//                    }
+
+                    togglePlay();
                 }
                 case "skipNext" -> skipToNext();
                 case "skipPrevious" -> skipToPrevious();
             }
+
+            return null;
         } catch (Exception e) {
             logError(e);
+            return null;
         }
     }
 
@@ -330,56 +318,56 @@ public class PlayerHook extends SpotifyHook {
     // Skip
     private void skipToNext() {
         try {
-            if(cachedRuf == null && cachedJxq != null) {
+            if (cachedRuf == null && cachedJxq != null) {
                 Object ruf = jxqAField.get(cachedJxq);
-                if(ruf != null) {
+                if (ruf != null) {
                     cachedRuf = ruf;
                 }
             }
 
-            if(cachedRuf == null) {
+            if (cachedRuf == null) {
                 Log.e("SpotifyPlus", "No cached ruf yet");
                 return;
             }
 
             Object request = buildSkipNextRequest();
-            if(request == null) {
+            if (request == null) {
                 Log.e("SpotifyPlus", "Failed to build EsSkipNextRequest");
                 return;
             }
 
-            Object result = rufCallSingleMethod.invoke(cachedRuf,"spotify.player.esperanto.proto.ContextPlayer","SkipNext",request);
+            Object result = rufCallSingleMethod.invoke(cachedRuf, "spotify.player.esperanto.proto.ContextPlayer", "SkipNext", request);
 
-            if(result != null) subscribeResult(result);
-        } catch(Throwable t) {
+            if (result != null) subscribeResult(result);
+        } catch (Throwable t) {
             Log.e("SpotifyPlus", "Failed to dispatch SkipNext", t);
         }
     }
 
     private void skipToPrevious() {
         try {
-            if(cachedRuf == null && cachedJxq != null) {
+            if (cachedRuf == null && cachedJxq != null) {
                 Object ruf = jxqAField.get(cachedJxq);
-                if(ruf != null) {
+                if (ruf != null) {
                     cachedRuf = ruf;
                 }
             }
 
-            if(cachedRuf == null) {
+            if (cachedRuf == null) {
                 Log.e("SpotifyPlus", "No cached ruf yet");
                 return;
             }
 
             Object request = buildSkipPrevRequest();
-            if(request == null) {
+            if (request == null) {
                 Log.e("SpotifyPlus", "Failed to build EsSkipPrevRequest");
                 return;
             }
 
             Object result = rufCallSingleMethod.invoke(cachedRuf, "spotify.player.esperanto.proto.ContextPlayer", "SkipPrev", request);
 
-            if(result != null) subscribeResult(result);
-        } catch(Throwable t) {
+            if (result != null) subscribeResult(result);
+        } catch (Throwable t) {
             Log.e("SpotifyPlus", "Failed to dispatch SkipPrev", t);
         }
     }
@@ -402,20 +390,20 @@ public class PlayerHook extends SpotifyHook {
             Object builder = wMethod.invoke(null);
 
             Method vMethod = null;
-            for(Method method : builder.getClass().getMethods()) {
-                if(method.getName().equals("v") && method.getParameterCount() == 1) {
+            for (Method method : builder.getClass().getMethods()) {
+                if (method.getName().equals("v") && method.getParameterCount() == 1) {
                     vMethod = method;
                     break;
                 }
             }
 
-            if(vMethod == null) throw new NoSuchMethodException("Could not find EsSkipNextRequest.Builder.v(...)");
+            if (vMethod == null) throw new NoSuchMethodException("Could not find EsSkipNextRequest.Builder.v(...)");
 
             vMethod.invoke(builder, esLoggingParams);
 
             Method buildMethod = builder.getClass().getMethod("build");
             return buildMethod.invoke(builder);
-        } catch(Throwable t) {
+        } catch (Throwable t) {
             Log.e("SpotifyPlus", "Failed building EsSkipNextRequest", t);
             return null;
         }
@@ -441,27 +429,29 @@ public class PlayerHook extends SpotifyHook {
             Method allowSeekingMethod = null;
             Method loggingMethod = null;
 
-            for(Method method : builder.getClass().getMethods()) {
-                if(method.getParameterCount() != 1) continue;
+            for (Method method : builder.getClass().getMethods()) {
+                if (method.getParameterCount() != 1) continue;
 
                 Class<?> param = method.getParameterTypes()[0];
 
-                if(param == boolean.class || param == Boolean.class) {
+                if (param == boolean.class || param == Boolean.class) {
                     allowSeekingMethod = method;
-                } else if(param.isInstance(esLoggingParams)) {
+                } else if (param.isInstance(esLoggingParams)) {
                     loggingMethod = method;
                 }
             }
 
-            if(loggingMethod == null) throw new NoSuchMethodException("Could not find EsSkipPrevRequest.Builder logging setter");
-            if(allowSeekingMethod == null) throw new NoSuchMethodException("Could not find EsSkipPrevRequest.Builder allowSeeking setter");
+            if (loggingMethod == null)
+                throw new NoSuchMethodException("Could not find EsSkipPrevRequest.Builder logging setter");
+            if (allowSeekingMethod == null)
+                throw new NoSuchMethodException("Could not find EsSkipPrevRequest.Builder allowSeeking setter");
 
             allowSeekingMethod.invoke(builder, false);
             loggingMethod.invoke(builder, esLoggingParams);
 
             Method buildMethod = builder.getClass().getMethod("build");
             return buildMethod.invoke(builder);
-        } catch(Throwable t) {
+        } catch (Throwable t) {
             Log.e("SpotifyPlus", "Failed building EsSkipPrevRequest", t);
             return null;
         }
@@ -469,9 +459,9 @@ public class PlayerHook extends SpotifyHook {
 
     private void subscribeResult(Object result) {
         try {
-            if(subscribeMethod == null) {
-                for(Method method : result.getClass().getMethods()) {
-                    if(method.getName().equals("subscribe") && method.getParameterCount() == 0) {
+            if (subscribeMethod == null) {
+                for (Method method : result.getClass().getMethods()) {
+                    if (method.getName().equals("subscribe") && method.getParameterCount() == 0) {
                         subscribeMethod = method;
                         subscribeMethod.setAccessible(true);
                         break;
@@ -479,13 +469,13 @@ public class PlayerHook extends SpotifyHook {
                 }
             }
 
-            if(subscribeMethod == null) {
+            if (subscribeMethod == null) {
                 Log.e("SpotifyPlus", "Could not find no-arg subscribe() on " + result.getClass().getName());
                 return;
             }
 
             subscribeMethod.invoke(result);
-        } catch(Throwable t) {
+        } catch (Throwable t) {
             Log.e("SpotifyPlus", "Failed subscribing to skip result", t);
         }
     }

@@ -6,6 +6,7 @@ public class SpotifyTrack {
     public final String[] artists;
     public final SpotifyAlbum album;
     public final String uri;
+    public final String id;
     public final long duration;
     public final long position;
     public final String color;
@@ -21,6 +22,7 @@ public class SpotifyTrack {
         this.artists = artists;
         this.album = album;
         this.uri = uri;
+        this.id = uri.split(":")[2];
         this.position = position;
         this.color = color;
         this.lastUpdated = lastUpdated;

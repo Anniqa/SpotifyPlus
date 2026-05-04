@@ -1523,7 +1523,7 @@ public class UiSurfaceHost {
             json.put("eventId", eventId);
             json.put("payload", payload != null ? payload : new JSONObject());
 
-            BridgeClient.send("", "event", "react.event", json);
+            ScriptManager.send("", "event", "react.event", json);
         } catch (Exception e) {
             Log.e(TAG, "Failed sending react evnet to node", e);
         }

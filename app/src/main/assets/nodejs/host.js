@@ -20,19 +20,11 @@ async function main() {
     const loader = new script_loader_1.ScriptLoader(runtime, logger.child('Loader'));
     const scriptRoots = resolveScriptRoots();
     runtime.start();
-    logger.info('Waiting for Spotify to connect');
-    await runtime.waitForSpotifyConnecting();
-    logger.info('Waiting for Spotify to be ready');
-    const spotifyReady = await runtime.waitForSpotifyReady();
-    if (!spotifyReady) {
-        logger.warn('Spotify did not become ready in time');
-        return;
-    }
-    logger.info('Spotify is ready!');
+    runtime.log('Spotify is ready!');
     loader.loadFromRoots(scriptRoots);
-    runtime.sendEvent('hostReady', { scriptRoots });
-    logger.info(`Host ready with ${scriptRoots.length} scripts`);
+    // runtime.sendEvent('hostReady', { scriptRoots });
+    runtime.log(`Host ready with ${scriptRoots.length} scripts`);
 }
 main().catch(error => {
-    logger.error('Host crashed', error);
+    console.error('Host crashed', error);
 });

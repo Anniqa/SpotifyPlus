@@ -9,6 +9,7 @@ import com.lenerd.spotifyplus.module.SpotifyCallback;
 import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
 import com.lenerd.spotifyplus.module.scripting.ScriptViewHost;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import com.lenerd.spotifyplus.module.scripting.UiSurfaceHost;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -31,7 +32,7 @@ public class ReactManager extends SpotifyHook {
 
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
-        ScriptManager.registerHandler("react", this);
+        SpotifyNativeBridge.registerHandler("react", this);
     }
 
     @Override
@@ -43,15 +44,17 @@ public class ReactManager extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
+    public Object handle(String command, Object[] args) {
         if (command.equals("commit")) {
             try {
-                String surfaceId = json.getString("surfaceId");
-                applyCommit(surfaceId, json.getJSONArray("ops"));
+                String surfaceId = (String) args[0];
+                applyCommit(surfaceId, (JSONArray) args[1]);
             } catch (Exception e) {
                 logError(e);
             }
         }
+
+        return null;
     }
 
     public static void registerSurface(String surfaceId, ViewGroup root) {
@@ -69,9 +72,11 @@ public class ReactManager extends SpotifyHook {
 
                 JSONObject json = new JSONObject();
                 json.put("id", surfaceId);
-                json.put("surfaceType", surfaceId);
+                json.put("type", surfaceId);
 
-                BridgeClient.send("", "event", "react.surfaceEvent", json);
+                SpotifyNativeBridge.attachSurfaceHost(surfaceId, root);
+                SpotifyNativeBridge.sendEvent("react.surfaceEvent", json.toString());
+//                ScriptManager.send("", "event", "react.surfaceEvent", json);
             } catch (Exception e) {
                 logError(e);
             }

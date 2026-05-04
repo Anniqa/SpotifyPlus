@@ -4,10 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HostRuntime = void 0;
-//@ts-ignore
 const crypto_1 = require("crypto");
 const bridge_1 = require("../bridge/bridge");
-const models_1 = require("../core/models");
 const script_registry_1 = require("./script-registry");
 const renderer_1 = require("../ui/renderer");
 const react_1 = __importDefault(require("react"));
@@ -18,7 +16,7 @@ class HostRuntime {
         this.spotifyConnecting = false;
         this.spotifyConnectingWaiters = new Set();
         this.spotifyReady = false;
-        this.spotifyReadyWaiters = new Set;
+        this.spotifyReadyWaiters = new Set();
         this.registry = new script_registry_1.ScriptRegistry(logger.child('Registry'));
         this.bridge = new bridge_1.Bridge(logger.child('Bridge'));
         this.platformData = {
@@ -32,9 +30,14 @@ class HostRuntime {
         };
     }
     start() {
-        this.bridge.startPolling(packet => {
-            void this.handleIncomingPacket(packet);
+        Object.assign(this.platformData, this.bridge.getPlatformData());
+        this.session.accessToken = this.bridge.getAccessToken();
+        this.registerEventListeners();
+        (0, renderer_1.setCommitDispatcher)((surfaceId, ops) => {
+            this.bridge.commitSurface(surfaceId, ops);
         });
+        this.bridge.log('Starting script runtime!');
+        console.log(`Access Token: ${this.session.accessToken}`);
     }
     sendEvent(name, payload = {}) {
         this.bridge.send({ type: 'event', name, payload });
@@ -53,21 +56,136 @@ class HostRuntime {
             this.bridge.send({ id, type: 'request', name, payload });
         });
     }
-    async getCurrentTrack() {
-        const payload = await this.request('player.getCurrent', {});
-        console.log(payload);
-        return payload ? models_1.SpotifyTrack.from(payload) : null;
+    getCurrentTrack() {
+        return this.bridge.getCurrentTrack();
     }
-    seek(position) {
-        const thing = `${position}`;
-        this.sendCommand('player.seek', { thing });
-    }
-    togglePlay(play) {
-        this.sendCommand('player.togglePlay', play ? { play } : {});
+    async getTrack(uri) {
+        return this.bridge.getTrack(uri);
     }
     async getProgress() {
-        const payload = await this.request('player.getProgress', {});
-        return payload ? payload.position : -1;
+        return this.bridge.getPlaybackPosition();
+    }
+    log(message) {
+        this.bridge.log(message);
+    }
+    seek(position) {
+        this.bridge.seek(position);
+    }
+    play() {
+        this.bridge.play();
+    }
+    pause() {
+        this.bridge.pause();
+    }
+    togglePlay() {
+        this.bridge.togglePlay();
+    }
+    skipNext() {
+        this.bridge.skipNext();
+    }
+    skipPrevious() {
+        this.bridge.skipPrevious();
+    }
+    toast(text, length = 'short') {
+        this.bridge.toast(text, length);
+    }
+    openUri(uri) {
+        this.bridge.openUri(uri);
+    }
+    storageSet(scriptId, key, value) {
+        this.bridge.storageSet(scriptId, key, value);
+    }
+    async storageGet(scriptId, key) {
+        return this.bridge.storageGet(scriptId, key);
+    }
+    storageRemove(scriptId, key) {
+        this.bridge.storageRemove(scriptId, key);
+    }
+    storageWriteText(scriptId, path, value) {
+        this.bridge.storageWriteText(scriptId, path, value);
+    }
+    storageWriteJson(scriptId, path, value) {
+        this.bridge.storageWriteJson(scriptId, path, value);
+    }
+    storageWriteBinary(scriptId, path, data) {
+        this.bridge.storageWriteBinary(scriptId, path, data);
+    }
+    async storageRead(scriptId, path) {
+        return this.bridge.storageRead(scriptId, path);
+    }
+    registerContextMenu(id, scriptId, title) {
+        this.bridge.registerContextMenu(id, scriptId, title);
+    }
+    registerSideDrawer(id, scriptId, title) {
+        this.bridge.registerSideDrawer(id, scriptId, title);
+    }
+    registerEventListeners() {
+        this.bridge.on('menu.press', payload => {
+            const data = payload;
+            if (!data) {
+                this.bridge.log('Failed to read context menu press data');
+                return;
+            }
+            this.registry.emitContextMenuPress(data.scriptId, data.id, data.uri);
+        });
+        this.bridge.on('side.press', payload => {
+            const data = payload;
+            if (!data) {
+                this.bridge.log('Failed to read side drawer press data');
+                return;
+            }
+            this.registry.emitSideDrawerPress(data.scriptId, data.id);
+        });
+        this.bridge.on('side.close', payload => {
+            const data = payload;
+            if (!data)
+                return;
+            this.registry.unmountSurface(data.scriptId, 'sideDrawer');
+            this.bridge.unregisterSurface('sideDrawer');
+        });
+        this.bridge.on('react.surfaceEvent', payload => {
+            const surface = payload;
+            if (!surface)
+                return;
+            const renderers = this.registry.getSurfaceRenderers(surface.id);
+            console.log(`Received react.surfaceEvent | ${renderers.length} | ${surface.id} | ${surface.type}`);
+            for (const renderer of renderers) {
+                try {
+                    const element = renderer.renderer(surface);
+                    this.bridge.registerSurface(surface.id);
+                    (0, renderer_1.setCommitListener)(surface.type, ops => {
+                        this.bridge.commitSurface(surface.id, ops);
+                    });
+                    this.registry.mountSurface(renderer.scriptId, surface, element);
+                }
+                catch (error) {
+                    this.bridge.log(`${error}`);
+                }
+            }
+        });
+        this.bridge.on('react.surfaceClose', payload => {
+            const data = payload;
+            if (!data?.surfaceId)
+                return;
+            this.registry.unmountAllSurfaces(data.surfaceId);
+            this.bridge.unregisterSurface(data.surfaceId);
+        });
+        this.bridge.on('react.event', payload => {
+            const data = payload;
+            const eventId = Number(data?.eventId);
+            if (!Number.isFinite(eventId))
+                return;
+            (0, renderer_1.dispatchReactEvent)(eventId, {
+                ...(data?.payload ?? {}),
+                targetId: data.targetId,
+                surfaceId: data.surfaceId,
+                eventName: data.eventName,
+            });
+        });
+        this.bridge.on('event.updateToken', payload => {
+            const data = payload;
+            Object.assign(this.session, data);
+        });
     }
     async handleIncomingPacket(packet) {
         this.logger.info(`Incoming ${packet.type}:${packet.name ?? packet.id}`);
@@ -78,7 +196,6 @@ class HostRuntime {
                 }
                 if (packet.name === 'event.ready') {
                     this.markSpotifyReady();
-                    this.logger.info(`${packet.payload.clientVersion}`);
                     Object.assign(this.platformData, packet.payload);
                 }
                 if (packet.name === 'event.updateToken') {
@@ -99,7 +216,6 @@ class HostRuntime {
                         });
                         this.registry.mountSurface(payload.scriptId, { id: 'sideDrawer', type: 'sideDrawer' }, result);
                     }
-                    // this.registry.emitSideDrawerPress(payload.scriptId, payload.id);
                 }
                 if (packet.name === 'side.close') {
                     const payload = packet.payload;
@@ -199,22 +315,6 @@ class HostRuntime {
             catch { }
         }
         this.spotifyConnectingWaiters.clear();
-    }
-    waitForSpotifyReady(timeoutMs = 15000) {
-        if (this.spotifyReady)
-            return Promise.resolve(true);
-        return new Promise(resolve => {
-            const waiter = (ready) => {
-                clearTimeout(timeout);
-                this.spotifyReadyWaiters.delete(waiter);
-                resolve(ready);
-            };
-            const timeout = setTimeout(() => {
-                this.spotifyReadyWaiters.delete(waiter);
-                resolve(false);
-            }, timeoutMs);
-            this.spotifyReadyWaiters.add(waiter);
-        });
     }
     markSpotifyReady() {
         if (this.spotifyReady)

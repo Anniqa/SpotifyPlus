@@ -62,7 +62,7 @@ public abstract class SpotifyHook implements XposedInterface.Hooker {
     protected abstract void afterHook(SpotifyCallback callback);
 
     /// Handle incoming messages from scripts
-    public abstract void handle(String id, String command, JSONObject json);
+    public abstract Object handle(String command, Object[] args);
 
     protected static SpotifyCallback buildCallback(XposedInterface.BeforeHookCallback callback) {
         try {

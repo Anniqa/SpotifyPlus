@@ -39,14 +39,14 @@ public class SpotifyLoader extends XposedModule {
             }
         }
 
-        new ScriptManager();
+//        new ScriptManager();
 
         new LyricsHook().init(this, param, bridge);
         new NetworkHook().init(this, param, bridge);
         new SideDrawerHook().init(this, param, bridge);
         new LegacyContextMenuHook().init(this, param, bridge);
         new ContextMenuHook().init(this, param, bridge);
-        new AnimatedAlbumArtwork().init(this, param, bridge);
+//        new AnimatedAlbumArtwork().init(this, param, bridge);
         new DebugHook().init(this, param, bridge);
         new PlayerHook().init(this, param, bridge);
         new StorageHook().init(this, param, bridge);

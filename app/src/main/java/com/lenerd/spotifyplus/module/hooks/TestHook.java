@@ -34,9 +34,9 @@ public class TestHook extends SpotifyHook {
         hook(l4oClass.getDeclaredMethod("invoke", Object.class), TestHook.class);
 
         Class<?> zm9Class = findClass("p.zm9");
-        for(Field field : zm9Class.getDeclaredFields()) field.setAccessible(true);
-        for(Method method : zm9Class.getDeclaredMethods()) {
-            if(method.isSynthetic() || method.isBridge()) continue;
+        for (Field field : zm9Class.getDeclaredFields()) field.setAccessible(true);
+        for (Method method : zm9Class.getDeclaredMethods()) {
+            if (method.isSynthetic() || method.isBridge()) continue;
             hook(method, TestHook.class);
             Log.d("SpotifyPlus", "Hooked p.zm9 method: " + describeMethod(method));
         }
@@ -45,25 +45,25 @@ public class TestHook extends SpotifyHook {
     @BeforeInvocation
     public static void before(XposedInterface.BeforeHookCallback callback) {
         TestHook hook = getHook(TestHook.class);
-        if(hook == null) return;
+        if (hook == null) return;
         hook.beforeHook(buildCallback(callback));
     }
 
     @AfterInvocation
     public static void after(XposedInterface.AfterHookCallback callback) {
         TestHook hook = getHook(TestHook.class);
-        if(hook == null) return;
+        if (hook == null) return;
         hook.afterHook(buildCallback(callback));
     }
 
     @Override
     protected void beforeHook(SpotifyCallback callback) {
         Member member = callback.getMember();
-        if(!(member instanceof Method method)) return;
+        if (!(member instanceof Method method)) return;
 
         String owner = method.getDeclaringClass().getName();
 
-        if(owner.equals("p.q5l") && method.getName().equals("onClick")) {
+        if (owner.equals("p.q5l") && method.getName().equals("onClick")) {
             View view = callback.getArgs() != null && callback.getArgs().length > 0 && callback.getArgs()[0] instanceof View
                     ? (View) callback.getArgs()[0] : null;
 
@@ -71,7 +71,7 @@ public class TestHook extends SpotifyHook {
                     ? view.getContentDescription().toString()
                     : null;
 
-            if(!looksRelevant(desc)) return;
+            if (!looksRelevant(desc)) return;
 
             traceUntil.set(SystemClock.uptimeMillis() + 1000L);
 
@@ -81,9 +81,9 @@ public class TestHook extends SpotifyHook {
             return;
         }
 
-        if(!isTracing()) return;
+        if (!isTracing()) return;
 
-        if(owner.equals("p.l4o") && method.getName().equals("invoke")) {
+        if (owner.equals("p.l4o") && method.getName().equals("invoke")) {
             Object thisObject = callback.getThisObject();
             Object arg = callback.getArgs() != null && callback.getArgs().length > 0 ? callback.getArgs()[0] : null;
 
@@ -93,7 +93,7 @@ public class TestHook extends SpotifyHook {
 
             dumpFields("l4o", thisObject);
 
-            if(arg != null) {
+            if (arg != null) {
                 dumpFields("l4o arg " + arg.getClass().getName(), arg);
                 hookCapturedFieldMethods(thisObject);
                 hookCapturedFieldMethods(arg);
@@ -102,7 +102,7 @@ public class TestHook extends SpotifyHook {
             return;
         }
 
-        if(owner.equals("p.zm9")) {
+        if (owner.equals("p.zm9")) {
             Log.d("SpotifyPlus", "=== p.zm9 call ===");
             Log.d("SpotifyPlus", "method=" + describeMethod(method));
             Log.d("SpotifyPlus", "this=" + safeToString(callback.getThisObject()));
@@ -119,81 +119,82 @@ public class TestHook extends SpotifyHook {
     @Override
     protected void afterHook(SpotifyCallback callback) {
         Member member = callback.getMember();
-        if(!(member instanceof Method method)) return;
-        if(!isTracing()) return;
+        if (!(member instanceof Method method)) return;
+        if (!isTracing()) return;
 
         String owner = method.getDeclaringClass().getName();
 
-        if(owner.equals("p.l4o") || owner.equals("p.zm9")) {
+        if (owner.equals("p.l4o") || owner.equals("p.zm9")) {
             Log.d("SpotifyPlus", "return=" + safeToString(callback.getResult()));
         }
 
-        if(owner.equals("p.q5l") && method.getName().equals("onClick")) {
+        if (owner.equals("p.q5l") && method.getName().equals("onClick")) {
             Log.d("SpotifyPlus", "=== q5l.onClick END ===");
         }
     }
 
     private void hookCapturedFieldMethods(Object instance) {
-        if(instance == null) return;
+        if (instance == null) return;
 
         try {
-            for(Field field : instance.getClass().getDeclaredFields()) {
+            for (Field field : instance.getClass().getDeclaredFields()) {
                 field.setAccessible(true);
-                if(Modifier.isStatic(field.getModifiers())) continue;
+                if (Modifier.isStatic(field.getModifiers())) continue;
 
                 Object value = field.get(instance);
-                if(value == null) continue;
+                if (value == null) continue;
 
                 String className = value.getClass().getName();
-                if(className.startsWith("java.") || className.startsWith("kotlin.") || className.equals("java.lang.Integer")) continue;
+                if (className.startsWith("java.") || className.startsWith("kotlin.") || className.equals("java.lang.Integer"))
+                    continue;
 
                 Log.d("SpotifyPlus", "Inspecting captured field " + field.getName() + " -> " + className);
 
-                for(Method method : value.getClass().getDeclaredMethods()) {
-                    if(method.isSynthetic() || method.isBridge()) continue;
+                for (Method method : value.getClass().getDeclaredMethods()) {
+                    if (method.isSynthetic() || method.isBridge()) continue;
 
                     String key = value.getClass().getName() + "#" + method.getName() + "#" + method.getParameterCount();
-                    if(!hookedMethods.add(key)) continue;
+                    if (!hookedMethods.add(key)) continue;
 
                     try {
                         hook(method, TestHook.class);
                         Log.d("SpotifyPlus", "Hooked captured method: " + describeMethod(method));
-                    } catch(Throwable e) {
+                    } catch (Throwable e) {
                         Log.d("SpotifyPlus", "Failed to hook " + describeMethod(method) + ": " + e);
                     }
                 }
             }
-        } catch(Throwable e) {
+        } catch (Throwable e) {
             Log.e("SpotifyPlus", "Failed to inspect captured fields", e);
         }
     }
 
     private void dumpFields(String label, Object instance) {
-        if(instance == null) return;
+        if (instance == null) return;
 
         try {
             Log.d("SpotifyPlus", "--- " + label + " fields ---");
             Class<?> cls = instance.getClass();
 
-            while(cls != null) {
-                for(Field field : cls.getDeclaredFields()) {
+            while (cls != null) {
+                for (Field field : cls.getDeclaredFields()) {
                     try {
                         field.setAccessible(true);
                         Object value = Modifier.isStatic(field.getModifiers()) ? field.get(null) : field.get(instance);
                         Log.d("SpotifyPlus", cls.getName() + "." + field.getName() + " = " + safeToString(value));
-                    } catch(Throwable e) {
+                    } catch (Throwable e) {
                         Log.d("SpotifyPlus", cls.getName() + "." + field.getName() + " = <error: " + e.getClass().getSimpleName() + ">");
                     }
                 }
                 cls = cls.getSuperclass();
             }
-        } catch(Throwable e) {
+        } catch (Throwable e) {
             Log.e("SpotifyPlus", "Failed dumping fields for " + label, e);
         }
     }
 
     private boolean looksRelevant(String desc) {
-        if(desc == null) return false;
+        if (desc == null) return false;
         String value = desc.toLowerCase();
         return value.contains("shuffle")
                 || value.contains("shuffling")
@@ -210,13 +211,13 @@ public class TestHook extends SpotifyHook {
     private static String describeMethod(Method method) {
         StringBuilder builder = new StringBuilder();
         builder.append(Modifier.toString(method.getModifiers()));
-        if(builder.length() > 0) builder.append(" ");
+        if (builder.length() > 0) builder.append(" ");
         builder.append(method.getReturnType().getName()).append(" ");
         builder.append(method.getDeclaringClass().getName()).append(".").append(method.getName()).append("(");
 
         Class<?>[] params = method.getParameterTypes();
-        for(int i = 0; i < params.length; i++) {
-            if(i > 0) builder.append(", ");
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) builder.append(", ");
             builder.append(params[i].getName());
         }
 
@@ -225,25 +226,27 @@ public class TestHook extends SpotifyHook {
     }
 
     private static String formatArgs(Object[] args) {
-        if(args == null) return "null";
+        if (args == null) return "null";
         try {
             String[] parts = new String[args.length];
-            for(int i = 0; i < args.length; i++) parts[i] = safeToString(args[i]);
+            for (int i = 0; i < args.length; i++) parts[i] = safeToString(args[i]);
             return Arrays.toString(parts);
-        } catch(Throwable e) {
+        } catch (Throwable e) {
             return "<failed to format args: " + e.getClass().getSimpleName() + ">";
         }
     }
 
     private static String safeToString(Object value) {
-        if(value == null) return "null";
+        if (value == null) return "null";
         try {
             return value + " (" + value.getClass().getName() + ")";
-        } catch(Throwable e) {
+        } catch (Throwable e) {
             return "<toString failed: " + e.getClass().getSimpleName() + ">";
         }
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) { }
+    public Object handle(String command, Object[] args) {
+        return null;
+    }
 }

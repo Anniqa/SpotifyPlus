@@ -21,6 +21,7 @@ import androidx.appcompat.app.AppCompatDelegate;
 import com.lenerd.spotifyplus.R;
 import com.lenerd.spotifyplus.module.entities.SpotifyAlbum;
 import com.lenerd.spotifyplus.module.entities.SpotifyTrack;
+import com.lenerd.spotifyplus.module.scripting.entities.PlatformData;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.FindMethod;
@@ -61,6 +62,7 @@ public final class Utils {
 
     public static WeakReference<Pair<String, String>> currentContextTrack;
     private static boolean vectorCompatEnabled = false;
+    public static PlatformData platformData;
 
     //region Loading Resources
 
@@ -301,6 +303,33 @@ public final class Utils {
             return cachedTypeface;
         } catch (Exception e) {
             Log.e("SpotifyPlus", e.getMessage());
+            return null;
+        }
+    }
+
+    public static AssetManager getModuleAssetManager() {
+        try {
+            AssetManager am = AssetManager.class.getDeclaredConstructor().newInstance();
+            Method addAssetPath = AssetManager.class.getDeclaredMethod("addAssetPath", String.class);
+            addAssetPath.setAccessible(true);
+
+            int cookie = (Integer) addAssetPath.invoke(am, MODULE_APK_PATH);
+            if (cookie == 0) throw new IllegalStateException("addAssetPath failed for " + MODULE_APK_PATH);
+
+            return am;
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", "Failed to create module AssetManager", e);
+            return null;
+        }
+    }
+
+    public static InputStream openModuleAsset(Context context, String assetPath) {
+        try {
+            ensureModuleResources(context);
+            if (moduleResources == null) return null;
+            return moduleResources.getAssets().open(assetPath);
+        } catch (Exception e) {
+            Log.e("SpotifyPlus", "Failed to open module asset: " + assetPath, e);
             return null;
         }
     }

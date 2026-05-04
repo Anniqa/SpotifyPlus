@@ -47,14 +47,12 @@ class PlaybackClock {
 
         this.syncTimer = setInterval(() => {
             this.syncFromSpotify();
-        }, 1000);
+        }, 250);
 
         this.timer = setInterval(() => {
-            console.log('Supposedly updating props and times and stuff??')
-
             this.update();
             this.emit();
-        }, 16);
+        }, 12);
     }
 
     private update = () => {
@@ -75,7 +73,7 @@ class PlaybackClock {
             this.currentTime = this.lastProgressSeconds;
             this.emit();
         } catch (e) {
-            console.log('Playback clock sync failed', e);
+            SpotifyPlus.log('Playback clock sync failed', e);
         }
     }
 

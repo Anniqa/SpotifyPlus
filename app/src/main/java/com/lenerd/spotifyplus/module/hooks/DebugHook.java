@@ -11,13 +11,14 @@ import com.lenerd.spotifyplus.module.SpotifyHook;
 import com.lenerd.spotifyplus.module.Utils;
 import com.lenerd.spotifyplus.module.entities.SpotifyTrack;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import org.json.JSONObject;
 
 public class DebugHook extends SpotifyHook {
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
-        ScriptManager.registerHandler("ui", this);
-        ScriptManager.registerHandler("system", this);
+        SpotifyNativeBridge.registerHandler("ui", this);
+        SpotifyNativeBridge.registerHandler("system", this);
     }
 
     @Override
@@ -27,24 +28,26 @@ public class DebugHook extends SpotifyHook {
     protected void afterHook(SpotifyCallback callback) { }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
+    public Object handle(String command, Object[] args) {
         try {
             if (command.equals("toast")) {
-                String text = json.getString("text");
-                String length = json.optString("length", "short");
+                String text = (String) args[0];
+                boolean longToast = (boolean) args[1];
 
-                if (currentActivity == null) return;
+                if (currentActivity == null) return null;
 
                 Handler handler = new Handler(Looper.getMainLooper());
-                handler.post(() -> Toast.makeText(currentActivity, text, length.equals("long") ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show());
+                handler.post(() -> Toast.makeText(currentActivity, text, longToast ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show());
             } else if(command.equals("openUri")) {
-                String uri = json.getString("uri");
-                if(currentActivity == null) return;
+                String uri = (String) args[0];
+                if(currentActivity == null) return null;
 
                 currentActivity.startActivity(new Intent(Intent.ACTION_VIEW).setData(Uri.parse(uri)));
             }
         } catch (Exception e) {
             logError(e);
         }
+
+        return null;
     }
 }

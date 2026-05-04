@@ -15,12 +15,8 @@ class ScriptApiFactory {
                 super(name, onClick, shouldAdd, disabled, (menu) => {
                     const id = `${scriptId}:${menu.name}`;
                     runtime.registry.registerContextMenu(scriptId, id, menu);
-                    runtime.sendCommand("menu.register", {
-                        id,
-                        scriptId,
-                        title: menu.name,
-                        disabled: menu.disabled
-                    });
+                    runtime.registerContextMenu(id, scriptId, menu.name);
+                    // runtime.sendCommand("menu.register", { id, scriptId, title: menu.name, disabled: menu.disabled });
                 });
             }
         };
@@ -29,101 +25,72 @@ class ScriptApiFactory {
                 super(name, onClick, (drawer) => {
                     const id = `${scriptId}:${drawer.name}`;
                     runtime.registry.registerSideDrawer(scriptId, id, drawer);
-                    runtime.sendCommand("side.register", {
-                        id,
-                        scriptId,
-                        title: drawer.name
-                    });
+                    runtime.registerSideDrawer(id, scriptId, drawer.name);
+                    // runtime.sendCommand("side.register", { id, scriptId, title: drawer.name });
                 });
             }
         };
         const api = {
             scriptId,
             version: 1,
-            log: (...args) => scriptLogger.info(formatLogArgs(args)),
-            warn: (...args) => scriptLogger.warn(formatLogArgs(args)),
-            error: (...args) => scriptLogger.error(formatLogArgs(args)),
+            log: (...args) => this.runtime.log(formatLogArgs(args)),
+            warn: (...args) => this.runtime.log(formatLogArgs(args)),
+            error: (...args) => this.runtime.log(formatLogArgs(args)),
             on: (eventName, handler) => this.runtime.registry.on(scriptId, eventName, handler),
             off: (eventName, handler) => this.runtime.registry.off(scriptId, eventName, handler),
             request: (name, payload = {}) => this.runtime.request(name, payload),
-            toast: (text, length = 'short') => this.runtime.sendCommand('ui.toast', { text, length }),
-            openUri: uri => this.runtime.sendCommand('system.openUri', { uri }),
+            toast: (text, length = 'short') => this.runtime.toast(text, length),
+            openUri: uri => this.runtime.openUri(uri),
             emit: (eventName, payload = {}) => this.runtime.sendEvent(eventName, payload),
             Platform: {
                 PlatformData: this.runtime.platformData,
                 Session: this.runtime.session,
                 Storage: {
-                    set: (key, value) => this.runtime.sendCommand('storage.set', { scriptId, key, value }),
-                    get: async (key) => {
-                        const payload = await this.runtime.request('storage.get', { scriptId, key });
-                        return payload && Object.prototype.hasOwnProperty.call(payload, 'value')
-                            ? payload.value ?? null
-                            : null;
-                    },
-                    remove: (key) => this.runtime.sendCommand('storage.remove', { scriptId, key }),
+                    set: (key, value) => this.runtime.storageSet(scriptId, key, value),
+                    get: async (key) => this.runtime.storageGet(scriptId, key),
+                    remove: key => this.runtime.storageRemove(scriptId, key),
                     write: (path, value) => {
                         if (isBinaryLike(value)) {
-                            this.runtime.sendCommand('storage.write', {
-                                scriptId,
-                                path,
-                                type: 'binary',
-                                data: toBase64(value)
-                            });
+                            this.runtime.storageWriteBinary(scriptId, path, toBase64(value));
                             return;
                         }
                         if (typeof value === 'string') {
-                            this.runtime.sendCommand('storage.write', {
-                                scriptId,
-                                path,
-                                type: 'text',
-                                value
-                            });
+                            this.runtime.storageWriteText(scriptId, path, value);
                             return;
                         }
-                        this.runtime.sendCommand('storage.write', {
-                            scriptId,
-                            path,
-                            type: 'json',
-                            value
-                        });
+                        this.runtime.storageWriteJson(scriptId, path, value);
                     },
                     read: async (path) => {
-                        const payload = await this.runtime.request('storage.read', { scriptId, path });
+                        const payload = await this.runtime.storageRead(scriptId, path);
                         if (!payload)
                             return null;
-                        if (payload.type === 'binary') {
+                        if (payload.type === 'binary')
                             return payload.data ? fromBase64(payload.data) : null;
-                        }
-                        if (payload.type === 'json' || payload.type === 'text') {
+                        if (payload.type === 'json' || payload.type === 'text')
                             return payload.value ?? null;
-                        }
-                        // fallback for older responses
                         if (typeof payload.data === 'string')
                             return fromBase64(payload.data);
-                        if (Object.prototype.hasOwnProperty.call(payload, 'value'))
-                            return payload.value ?? null;
-                        return null;
+                        return payload.value ?? null;
                     }
                 }
             },
             Internal: {
-                getTrack: async (uri) => {
-                    const payload = await this.runtime.request('internal.getTrack', { uri });
-                    return payload ? models_1.SpotifyTrack.from(payload) : null;
-                }
+                getTrack: async (uri) => this.runtime.getTrack(uri)
             },
             Player: {
                 getCurrentTrack: () => this.runtime.getCurrentTrack(),
                 getProgress: () => this.runtime.getProgress(),
-                seek: (position) => this.runtime.seek(position),
-                play: () => this.runtime.togglePlay(true),
-                pause: () => this.runtime.togglePlay(false),
+                seek: position => this.runtime.seek(position),
+                play: () => this.runtime.play(),
+                pause: () => this.runtime.pause(),
                 togglePlay: () => this.runtime.togglePlay(),
-                skipNext: () => this.runtime.sendCommand('player.skipNext', {}),
-                skipPrevious: () => this.runtime.sendCommand('player.skipPrevious', {})
+                skipNext: () => this.runtime.skipNext(),
+                skipPrevious: () => this.runtime.skipPrevious()
             },
             Surfaces: {
-                register: (surfaceType, renderer) => this.runtime.registry.registerSurfaceRenderer(scriptId, surfaceType, renderer)
+                register: (surfaceType, renderer) => {
+                    this.runtime.registry.registerSurfaceRenderer(scriptId, surfaceType, renderer);
+                }
             },
             ContextMenu: ScriptContextMenu,
             SideDrawer: ScriptSideDrawer

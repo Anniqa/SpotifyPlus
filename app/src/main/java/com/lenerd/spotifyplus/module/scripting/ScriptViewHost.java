@@ -5,8 +5,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.TimeInterpolator;
 import android.animation.ValueAnimator;
 import android.content.Context;
-import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -55,7 +53,6 @@ import com.facebook.yoga.YogaNodeFactory;
 import com.facebook.yoga.YogaOverflow;
 import com.facebook.yoga.YogaPositionType;
 import com.facebook.yoga.YogaWrap;
-import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 
 import com.lenerd.spotifyplus.module.Utils;
 import org.json.JSONArray;
@@ -130,7 +127,7 @@ public class ScriptViewHost {
                 Log.e("SpotifyPlus", "Failed to get library", e);
             }
 
-            markSoLoaderLibraryAsLoaded("yoga");
+            markSoLoaderLibraryAsLoaded();
         }
 
         this.surfaceId = surfaceId;
@@ -165,7 +162,7 @@ public class ScriptViewHost {
         }
     }
 
-    private static void markSoLoaderLibraryAsLoaded(String shortName) {
+    private static void markSoLoaderLibraryAsLoaded() {
         try {
             Class<?> soLoaderClass = Class.forName("com.facebook.soloader.SoLoader");
             java.lang.reflect.Field loadedField = soLoaderClass.getDeclaredField("sLoadedLibraries");
@@ -174,12 +171,12 @@ public class ScriptViewHost {
             @SuppressWarnings("unchecked")
             java.util.Set<String> loaded = (java.util.Set<String>) loadedField.get(null);
 
-            String soName = System.mapLibraryName(shortName);
+            String soName = System.mapLibraryName("yoga");
             loaded.add(soName);
 
             android.util.Log.d("SpotifyPlus", "Marked SoLoader library as loaded: " + soName);
         } catch (Throwable t) {
-            throw new RuntimeException("Failed to mark SoLoader library as loaded: " + shortName, t);
+            throw new RuntimeException("Failed to mark SoLoader library as loaded: " + "yoga", t);
         }
     }
 
@@ -1967,7 +1964,7 @@ public class ScriptViewHost {
             json.put("eventName", eventName);
             json.put("eventId", eventId);
             json.put("payload", payload != null ? payload : new JSONObject());
-            BridgeClient.send("", "event", "react.event", json);
+            SpotifyNativeBridge.sendEvent("react.event", json.toString());
         } catch (Exception e) {
             Log.e(TAG, "Failed sending react event to node", e);
         }

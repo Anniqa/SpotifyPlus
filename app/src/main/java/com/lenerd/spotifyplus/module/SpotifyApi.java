@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.lenerd.spotifyplus.manager.bridge.BridgeClient;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import okhttp3.*;
 import org.jetbrains.annotations.NotNull;
 import org.json.JSONException;
@@ -20,7 +21,7 @@ import java.util.stream.Collectors;
 public final class SpotifyApi extends SpotifyHook {
     @Override
     protected void hookSetup() throws NoSuchMethodException, ClassNotFoundException, NoSuchFieldException {
-        ScriptManager.registerHandler("internal", this);
+        SpotifyNativeBridge.registerHandler("internal", this);
     }
 
     @Override
@@ -32,31 +33,33 @@ public final class SpotifyApi extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
+    public Object handle(String command, Object[] args) {
         if (command.equals("getTrack")) {
             try {
-                String uri = json.getString("uri");
+                String uri = (String) args[0];
 
                 getTrack(uri, new SpotifyResponseCallback() {
                     @Override
                     public void onSuccess(JSONObject response) {
                         Log.d("SpotifyPlus", response.toString());
-                        BridgeClient.send(id, "response", "internal.getTrack", response);
+//                        ScriptManager.send(id, "response", "internal.getTrack", response);
                     }
 
                     @Override
                     public void onError(Exception e) {
                         logError(e);
-                        BridgeClient.send(id, "response", "internal.getTrack", new JSONObject());
+//                        ScriptManager.send(id, "response", "internal.getTrack", new JSONObject());
                     }
                 });
             } catch (Exception e) {
                 logError(e);
             }
         }
+
+        return null;
     }
 
-    public void getTrack(String uri, SpotifyResponseCallback callback) {
+    public static void getTrack(String uri, SpotifyResponseCallback callback) {
         try {
             String id = uri.split(":")[2];
             String gid = spotifyToGid(id);

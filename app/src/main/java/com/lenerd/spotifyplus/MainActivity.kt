@@ -49,14 +49,14 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val scriptManager = ScriptManager(this)
-        scriptManager.start()
+//        val scriptManager = ScriptManager(this)
+//        scriptManager.start()
 
-        BridgeService()
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            scriptManager.testPing()
-        }, 1000)
+//        BridgeService()
+//
+//        Handler(Looper.getMainLooper()).postDelayed({
+//            scriptManager.testPing()
+//        }, 1000)
 
 //        if(!nodeStarted) {
 //            nodeStarted = true

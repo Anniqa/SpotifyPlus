@@ -17,6 +17,7 @@ import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
 import com.lenerd.spotifyplus.module.Utils;
 import com.lenerd.spotifyplus.module.scripting.ScriptContextMenu;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -132,7 +133,7 @@ public class ContextMenuHook extends SpotifyHook {
             replaceResourceIdMethod = bridge.findMethod(FindMethod.create().searchInClass(resourceIdClass).matcher(MethodMatcher.create().returnType(String.class))).stream().filter(x -> !x.getMethodName().equals("getDebugIdentifier")).collect(Collectors.toList()).get(0).getMethodInstance(classLoader);
             hook(replaceResourceIdMethod);
 
-            ScriptManager.registerHandler("menu", this);
+            SpotifyNativeBridge.registerHandler("menu", this);
         } catch (Exception e) {
             logError(e);
         }
@@ -334,7 +335,8 @@ public class ContextMenuHook extends SpotifyHook {
                     json.put("scriptId", menu.scriptId);
                     json.put("uri", lastContextMenuUri);
 
-                    BridgeClient.send("", "event", "menu.press", json);
+                    SpotifyNativeBridge.sendEvent("menu.press", json.toString());
+//                    ScriptManager.send("", "event", "menu.press", json);
 
                     callback.returnAndSkip(null);
 
@@ -413,19 +415,21 @@ public class ContextMenuHook extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
+    public Object handle(String command, Object[] args) {
         if (command.equals("register")) {
             try {
-                String menuId = json.getString("id");
-                String scriptId = json.getString("scriptId");
-                String title = json.getString("title");
+                String menuId = (String) args[0];
+                String scriptId = (String) args[1];
+                String title = (String) args[2];
 
                 ScriptContextMenu menu = new ScriptContextMenu(menuId, scriptId, title);
-                if(scriptMenus.contains(menu)) return;
+                if(scriptMenus.contains(menu)) return null;
 
                 scriptMenus.add(menu);
             } catch(Exception ignored) { }
         }
+
+        return null;
     }
 
     private Object getLastfmIcon() {

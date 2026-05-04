@@ -1,252 +1,279 @@
-#include <jni.h>
-#include <string>
-#include <cstdlib>
-#include "node.h"
-#include <pthread.h>
-#include <unistd.h>
-#include <android/log.h>
-#include <cstring>
-#include <queue>
-#include <mutex>
+// #include <android/log.h>
+// #include <jni.h>
+// #include <pthread.h>
+// #include <unistd.h>
 
-int pipe_stdout[2];
-int pipe_stderr[2];
-pthread_t thread_stdout;
-pthread_t thread_stderr;
-const char *ADBTAG = "SpotifyPlus";
+// #include <cstdlib>
+// #include <cstring>
+// #include <mutex>
+// #include <queue>
+// #include <string>
 
-static JavaVM *g_vm = nullptr;
-static jobject g_scriptManager = nullptr;
-static jmethodID g_onMessageFromNode = nullptr;
+// #include "node.h"
+// #include "spotifyengine.h"
 
-static std::queue<std::string> g_javaToNodeQueue;
-static std::mutex g_queueMutex;
+// // int pipe_stdout[2];
+// // int pipe_stderr[2];
+// // pthread_t thread_stdout;
+// // pthread_t thread_stderr;
+// // const char* ADBTAG = "SpotifyPlus";
 
-void *thread_stderr_func(void *)
-{
-    ssize_t redirect_size;
-    char buf[2048];
-    while ((redirect_size = read(pipe_stderr[0], buf, sizeof buf - 1)) > 0)
-    {
-        //__android_log will add a new line anyway.
-        if (buf[redirect_size - 1] == '\n')
-            --redirect_size;
-        buf[redirect_size] = 0;
-        __android_log_write(ANDROID_LOG_ERROR, ADBTAG, buf);
-    }
-    return 0;
-}
+// // static JavaVM* g_vm = nullptr;
+// // static jobject g_scriptManager = nullptr;
+// // static jmethodID g_onMessageFromNode = nullptr;
 
-void *thread_stdout_func(void *)
-{
-    ssize_t redirect_size;
-    char buf[2048];
-    while ((redirect_size = read(pipe_stdout[0], buf, sizeof buf - 1)) > 0)
-    {
-        //__android_log will add a new line anyway.
-        if (buf[redirect_size - 1] == '\n')
-            --redirect_size;
-        buf[redirect_size] = 0;
-        __android_log_write(ANDROID_LOG_INFO, ADBTAG, buf);
-    }
-    return 0;
-}
+// // static std::queue<std::string> g_javaToNodeQueue;
+// // static std::mutex g_queueMutex;
 
-int start_redirecting_stdout_stderr()
-{
-    // set stdout as unbuffered.
-    setvbuf(stdout, 0, _IONBF, 0);
-    pipe(pipe_stdout);
-    dup2(pipe_stdout[1], STDOUT_FILENO);
+// // static bool should_skip_log(const char* msg)
+// // {
+// //     if (msg == nullptr)
+// //         return true;
 
-    // set stderr as unbuffered.
-    setvbuf(stderr, 0, _IONBF, 0);
-    pipe(pipe_stderr);
-    dup2(pipe_stderr[1], STDERR_FILENO);
+// //     return strstr(msg, "s_glBindAttribLocation:") != nullptr;
+// // }
 
-    if (pthread_create(&thread_stdout, 0, thread_stdout_func, 0) == -1)
-        return -1;
-    pthread_detach(thread_stdout);
+// // void* thread_stderr_func(void*)
+// // {
+// //     ssize_t redirect_size;
+// //     char buf[2048];
+// //     while ((redirect_size = read(pipe_stderr[0], buf, sizeof buf - 1)) > 0)
+// //     {
+// //         if (buf[redirect_size - 1] == '\n')
+// //             --redirect_size;
+// //         buf[redirect_size] = 0;
 
-    if (pthread_create(&thread_stderr, 0, thread_stderr_func, 0) == -1)
-        return -1;
-    pthread_detach(thread_stderr);
+// //         if (should_skip_log(buf))
+// //             continue;
 
-    return 0;
-}
+// //         __android_log_write(ANDROID_LOG_ERROR, ADBTAG, buf);
+// //     }
+// //     return 0;
+// // }
 
-jint JNI_OnLoad(JavaVM *vm, void *)
-{
-    g_vm = vm;
-    return JNI_VERSION_1_6;
-}
+// // void* thread_stdout_func(void*)
+// // {
+// //     ssize_t redirect_size;
+// //     char buf[2048];
+// //     while ((redirect_size = read(pipe_stdout[0], buf, sizeof buf - 1)) > 0)
+// //     {
+// //         if (buf[redirect_size - 1] == '\n')
+// //             --redirect_size;
+// //         buf[redirect_size] = 0;
 
-static void dispatch_to_java(const std::string &json)
-{
-    if (g_vm == nullptr || g_scriptManager == nullptr || g_onMessageFromNode == nullptr)
-        return;
+// //         if (should_skip_log(buf))
+// //             continue;
 
-    JNIEnv *env = nullptr;
-    bool didAttach = false;
+// //         __android_log_write(ANDROID_LOG_INFO, ADBTAG, buf);
+// //     }
+// //     return 0;
+// // }
 
-    if (g_vm->GetEnv((void **)&env, JNI_VERSION_1_6) != JNI_OK)
-    {
-        if (g_vm->AttachCurrentThread(&env, nullptr) != JNI_OK)
-        {
-            __android_log_write(ANDROID_LOG_ERROR, ADBTAG, "Failed to attach thread to JVM");
-            return;
-        }
+// // int start_redirecting_stdout_stderr()
+// // {
+// //     // set stdout as unbuffered.
+// //     setvbuf(stdout, 0, _IONBF, 0);
+// //     pipe(pipe_stdout);
+// //     dup2(pipe_stdout[1], STDOUT_FILENO);
 
-        didAttach = true;
-    }
+// //     // set stderr as unbuffered.
+// //     setvbuf(stderr, 0, _IONBF, 0);
+// //     pipe(pipe_stderr);
+// //     dup2(pipe_stderr[1], STDERR_FILENO);
 
-    jstring jjson = env->NewStringUTF(json.c_str());
-    env->CallVoidMethod(g_scriptManager, g_onMessageFromNode, jjson);
+// //     if (pthread_create(&thread_stdout, 0, thread_stdout_func, 0) == -1)
+// //         return -1;
+// //     pthread_detach(thread_stdout);
 
-    if (env->ExceptionCheck())
-    {
-        env->ExceptionDescribe();
-        env->ExceptionClear();
-    }
+// //     if (pthread_create(&thread_stderr, 0, thread_stderr_func, 0) == -1)
+// //         return -1;
+// //     pthread_detach(thread_stderr);
 
-    env->DeleteLocalRef(jjson);
+// //     return 0;
+// // }
 
-    if (didAttach)
-        g_vm->DetachCurrentThread();
-}
+// // jint JNI_OnLoad(JavaVM *vm, void *)
+// // {
+// //     g_vm = vm;
+// //     return JNI_VERSION_1_6;
+// // }
 
-extern "C" jint JNICALL
-Java_com_lenerd_spotifyplus_manager_scripting_ScriptManager_startNodeWithArguments(JNIEnv *env, jobject /* this */, jobjectArray arguments)
-{
-    // argc
-    jsize argument_count = env->GetArrayLength(arguments);
+// // extern "C" double SpotifyPlus_GetPlaybackPosition()
+// // {
+// //     return SpotifyPlusEngine::Get().GetPlaybackPosition();
+// // }
 
-    // Compute byte size need for all arguments in contiguous memory.
-    int c_arguments_size = 0;
-    for (int i = 0; i < argument_count; i++)
-    {
-        c_arguments_size += strlen(env->GetStringUTFChars((jstring)env->GetObjectArrayElement(arguments, i), 0));
-        c_arguments_size++; // for '\0'
-    }
+// static void dispatch_to_java(const std::string& json)
+// {
+//     if (g_vm == nullptr || g_scriptManager == nullptr || g_onMessageFromNode == nullptr)
+//         return;
 
-    // Stores arguments in contiguous memory.
-    char *args_buffer = (char *)calloc(c_arguments_size, sizeof(char));
+//     JNIEnv* env = nullptr;
+//     bool didAttach = false;
 
-    // argv to pass into node.
-    char *argv[argument_count];
+//     if (g_vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK)
+//     {
+//         if (g_vm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+//         {
+//             __android_log_write(ANDROID_LOG_ERROR, ADBTAG, "Failed to attach thread to JVM");
+//             return;
+//         }
 
-    // To iterate through the expected start position of each argument in args_buffer.
-    char *current_args_position = args_buffer;
+//         didAttach = true;
+//     }
 
-    // Populate the args_buffer and argv.
-    for (int i = 0; i < argument_count; i++)
-    {
-        const char *current_argument = env->GetStringUTFChars((jstring)env->GetObjectArrayElement(arguments, i), 0);
+//     jstring jjson = env->NewStringUTF(json.c_str());
+//     env->CallVoidMethod(g_scriptManager, g_onMessageFromNode, jjson);
 
-        // Copy current argument to its expected position in args_buffer
-        strncpy(current_args_position, current_argument, strlen(current_argument));
+//     if (env->ExceptionCheck())
+//     {
+//         env->ExceptionDescribe();
+//         env->ExceptionClear();
+//     }
 
-        // Save current argument start position in argv
-        argv[i] = current_args_position;
+//     env->DeleteLocalRef(jjson);
 
-        // Increment to the next argument's expected position.
-        current_args_position += strlen(current_args_position) + 1;
-    }
+//     if (didAttach)
+//         g_vm->DetachCurrentThread();
+// }
 
-    // Enable for full debug logging. Honestly this is really only disabled because it prints a ton of errors
-    bool enable = true;
-    if (enable && start_redirecting_stdout_stderr() == -1)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, ADBTAG, "Couldn't start redirecting stdout and stderr to logcat.");
-    }
+// extern "C" jint JNICALL
+// Java_com_lenerd_spotifyplus_module_scripting_ScriptManager_startNodeWithArguments(JNIEnv* env, jobject /* this */, jobjectArray arguments)
+// {
+//     // argc
+//     jsize argument_count = env->GetArrayLength(arguments);
 
-    // Start node, with argc and argv.
-    int node_result = node::Start(argument_count, argv);
-    free(args_buffer);
+//     // Compute byte size need for all arguments in contiguous memory.
+//     int c_arguments_size = 0;
+//     for (int i = 0; i < argument_count; i++)
+//     {
+//         c_arguments_size += strlen(env->GetStringUTFChars((jstring)env->GetObjectArrayElement(arguments, i), 0));
+//         c_arguments_size++;  // for '\0'
+//     }
 
-    return jint(node_result);
-}
+//     // Stores arguments in contiguous memory.
+//     char* args_buffer = (char*)calloc(c_arguments_size, sizeof(char));
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_lenerd_spotifyplus_manager_scripting_ScriptManager_nativeInit(JNIEnv *env, jobject thiz)
-{
-    if (g_scriptManager != nullptr)
-    {
-        env->DeleteGlobalRef(g_scriptManager);
-        g_scriptManager = nullptr;
-    }
+//     // argv to pass into node.
+//     char* argv[argument_count];
 
-    g_scriptManager = env->NewGlobalRef(thiz);
+//     // To iterate through the expected start position of each argument in args_buffer.
+//     char* current_args_position = args_buffer;
 
-    jclass cls = env->GetObjectClass(thiz);
-    g_onMessageFromNode = env->GetMethodID(cls, "onMessageFromNode", "(Ljava/lang/String;)V");
-    env->DeleteLocalRef(cls);
+//     // Populate the args_buffer and argv.
+//     for (int i = 0; i < argument_count; i++)
+//     {
+//         const char* current_argument = env->GetStringUTFChars((jstring)env->GetObjectArrayElement(arguments, i), 0);
 
-    if (g_onMessageFromNode == nullptr)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, ADBTAG, "Failed to find onMessageFromNode(String)");
-        return;
-    }
+//         // Copy current argument to its expected position in args_buffer
+//         strncpy(current_args_position, current_argument, strlen(current_argument));
 
-    dispatch_to_java("{\"type\":\"native\",\"name\":\"bridgeReady\"}");
-}
+//         // Save current argument start position in argv
+//         argv[i] = current_args_position;
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_lenerd_spotifyplus_manager_scripting_ScriptManager_nativeSendToNode(JNIEnv *env, jobject, jstring json_)
-{
-    if (json_ == nullptr)
-        return;
+//         // Increment to the next argument's expected position.
+//         current_args_position += strlen(current_args_position) + 1;
+//     }
 
-    const char *json = env->GetStringUTFChars(json_, nullptr);
-    if (json == nullptr)
-        return;
+//     // Enable for full debug logging. Honestly this is really only disabled because it prints a ton of errors
+//     bool enable = true;
+//     if (enable && start_redirecting_stdout_stderr() == -1)
+//     {
+//         __android_log_write(ANDROID_LOG_ERROR, ADBTAG, "Couldn't start redirecting stdout and stderr to logcat.");
+//     }
 
-    {
-        std::lock_guard<std::mutex> lock(g_queueMutex);
-        g_javaToNodeQueue.push(std::string(json));
-    }
+//     // Start node, with argc and argv.
+//     int node_result = node::Start(argument_count, argv);
+//     free(args_buffer);
 
-    __android_log_print(ANDROID_LOG_INFO, ADBTAG, "Queued message for Node: %s", json);
-    env->ReleaseStringUTFChars(json_, json);
-}
+//     return jint(node_result);
+// }
 
-static std::string pop_java_to_node_message()
-{
-    std::lock_guard<std::mutex> lock(g_queueMutex);
-    if (g_javaToNodeQueue.empty())
-        return "";
-    std::string value = g_javaToNodeQueue.front();
-    g_javaToNodeQueue.pop();
-    return value;
-}
+// extern "C" JNIEXPORT void JNICALL
+// Java_com_lenerd_spotifyplus_module_scripting_ScriptManager_nativeInit(JNIEnv* env, jobject thiz)
+// {
+//     if (g_scriptManager != nullptr)
+//     {
+//         env->DeleteGlobalRef(g_scriptManager);
+//         g_scriptManager = nullptr;
+//     }
 
-extern "C" __attribute__((visibility("default"))) void SpotifyPlusBridge_SendToJava(const char *json)
-{
-    if (json == nullptr)
-        return;
-    dispatch_to_java(std::string(json));
-}
+//     g_scriptManager = env->NewGlobalRef(thiz);
 
-extern "C" __attribute__((visibility("default"))) char *SpotifyPlusBridge_PollFromJava()
-{
-    std::lock_guard<std::mutex> lock(g_queueMutex);
-    if (g_javaToNodeQueue.empty())
-        return nullptr;
+//     jclass cls = env->GetObjectClass(thiz);
+//     g_onMessageFromNode = env->GetMethodID(cls, "onMessageFromNode", "(Ljava/lang/String;)V");
+//     env->DeleteLocalRef(cls);
 
-    std::string value = g_javaToNodeQueue.front();
-    g_javaToNodeQueue.pop();
+//     if (g_onMessageFromNode == nullptr)
+//     {
+//         __android_log_write(ANDROID_LOG_ERROR, ADBTAG, "Failed to find onMessageFromNode(String)");
+//         return;
+//     }
 
-    char *result = (char *)malloc(value.size() + 1);
-    if (result == nullptr)
-        return nullptr;
+//     dispatch_to_java("{\"type\":\"native\",\"name\":\"bridgeReady\"}");
+// }
 
-    memcpy(result, value.c_str(), value.size());
-    result[value.size()] = '\0';
-    return result;
-}
+// extern "C" JNIEXPORT void JNICALL
+// Java_com_lenerd_spotifyplus_module_scripting_ScriptManager_nativeSendToNode(JNIEnv* env, jobject, jstring json_)
+// {
+//     if (json_ == nullptr)
+//         return;
 
-extern "C" __attribute__((visibility("default"))) void SpotifyPlusBridge_FreeString(char *str)
-{
-    if (str != nullptr)
-        free(str);
-}
+//     const char* json = env->GetStringUTFChars(json_, nullptr);
+//     if (json == nullptr)
+//         return;
+
+//     {
+//         std::lock_guard<std::mutex> lock(g_queueMutex);
+//         g_javaToNodeQueue.push(std::string(json));
+//     }
+
+//     __android_log_print(ANDROID_LOG_INFO, ADBTAG, "Queued message for Node: %s", json);
+//     env->ReleaseStringUTFChars(json_, json);
+// }
+
+// // extern "C" bool SpotifyPlus_SetEventHandler(napi_env env, napi_value callback)
+// // {
+// //     return SpotifyPlusEngine::Get().SetEventHandler(env, callback);
+// // }
+
+// static std::string pop_java_to_node_message()
+// {
+//     std::lock_guard<std::mutex> lock(g_queueMutex);
+//     if (g_javaToNodeQueue.empty())
+//         return "";
+//     std::string value = g_javaToNodeQueue.front();
+//     g_javaToNodeQueue.pop();
+//     return value;
+// }
+
+// extern "C" __attribute__((visibility("default"))) void SpotifyPlusBridge_SendToJava(const char* json)
+// {
+//     if (json == nullptr)
+//         return;
+//     dispatch_to_java(std::string(json));
+// }
+
+// extern "C" __attribute__((visibility("default"))) char* SpotifyPlusBridge_PollFromJava()
+// {
+//     std::lock_guard<std::mutex> lock(g_queueMutex);
+//     if (g_javaToNodeQueue.empty())
+//         return nullptr;
+
+//     std::string value = g_javaToNodeQueue.front();
+//     g_javaToNodeQueue.pop();
+
+//     char* result = (char*)malloc(value.size() + 1);
+//     if (result == nullptr)
+//         return nullptr;
+
+//     memcpy(result, value.c_str(), value.size());
+//     result[value.size()] = '\0';
+//     return result;
+// }
+
+// extern "C" __attribute__((visibility("default"))) void SpotifyPlusBridge_FreeString(char* str)
+// {
+//     if (str != nullptr)
+//         free(str);
+// }

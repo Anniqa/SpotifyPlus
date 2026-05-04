@@ -31,6 +31,7 @@ import com.lenerd.spotifyplus.module.SpotifyPlusSettings;
 import com.lenerd.spotifyplus.module.Utils;
 import com.lenerd.spotifyplus.module.scripting.ScriptManager;
 import com.lenerd.spotifyplus.module.scripting.ScriptSideDrawerItem;
+import com.lenerd.spotifyplus.module.scripting.SpotifyNativeBridge;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.annotations.AfterInvocation;
 import io.github.libxposed.api.annotations.BeforeInvocation;
@@ -258,7 +259,7 @@ public class SideDrawerHook extends SpotifyHook {
         resourceMethod = bridge.findMethod(FindMethod.create().searchInClass(resourceClass).matcher(MethodMatcher.create().returnType(String.class).paramCount(2))).get(0).getMethodInstance(classLoader);
         hook(resourceMethod);
 
-        ScriptManager.registerHandler("side", this);
+        SpotifyNativeBridge.registerHandler("side", this);
     }
 
     @BeforeInvocation
@@ -331,7 +332,7 @@ public class SideDrawerHook extends SpotifyHook {
                             json.put("id", uri.getQueryParameter("id"));
                             json.put("scriptId", uri.getQueryParameter("scriptId"));
 
-                            BridgeClient.send("", "event", "side.press", json);
+                            ScriptManager.send("", "event", "side.press", json);
 
                             callback.returnAndSkip(newInstance(bti0Class, "spotify:home"));
                             return;
@@ -438,7 +439,8 @@ public class SideDrawerHook extends SpotifyHook {
                             json.put("id", id);
                             json.put("scriptId", scriptId);
 
-                            BridgeClient.send("", "event", "side.press", json);
+                            SpotifyNativeBridge.sendEvent("side.press", json.toString());
+//                            ScriptManager.send("", "event", "side.press", json);
 
                             if (android.os.Build.VERSION.SDK_INT >= 33) {
                                 Activity activity = currentActivity.get();
@@ -447,7 +449,7 @@ public class SideDrawerHook extends SpotifyHook {
                                     @Override
                                     public void onBackInvoked() {
                                         log("Back pressed!");
-                                        BridgeClient.send("", "event", "side.close", json);
+                                        ScriptManager.send("", "event", "side.close", json);
                                     }
                                 };
 
@@ -514,15 +516,15 @@ public class SideDrawerHook extends SpotifyHook {
     }
 
     @Override
-    public void handle(String id, String command, JSONObject json) {
+    public Object handle(String command, Object[] args) {
         if (command.equals("register")) {
             try {
-                String itemId = json.getString("id");
-                String scriptId = json.getString("scriptId");
-                String title = json.getString("title");
+                String itemId = (String) args[0];
+                String scriptId = (String) args[1];
+                String title = (String) args[2];
 
                 ScriptSideDrawerItem item = new ScriptSideDrawerItem(itemId, scriptId, title);
-                if (scriptItems.contains(item)) return;
+                if (scriptItems.contains(item)) return null;
                 log("Registering " + itemId + " | " + scriptId);
 
                 item.resourceId = resourceIdToUse;
@@ -532,6 +534,8 @@ public class SideDrawerHook extends SpotifyHook {
             } catch (Exception ignored) {
             }
         }
+
+        return null;
     }
 
     private Object createSideDrawerButton(String title, Object template, int resId, String uri) {
