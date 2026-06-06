@@ -61,7 +61,7 @@ class HostRuntime {
     async getTrack(uri) {
         return this.bridge.getTrack(uri);
     }
-    async getProgress() {
+    getProgress() {
         return this.bridge.getPlaybackPosition();
     }
     log(message) {

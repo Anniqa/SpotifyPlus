@@ -107,13 +107,18 @@ export interface MenuContext {
 }
 
 export interface PlatformData {
+    /** The current version of the Spotify app */
     clientVersion: string;
+    /** The name of the operating system */
     osName: string;
+    /** The current major version of Android */
     osVersion: string;
+    /** The current Android SDK version or API level */
     sdkVersion: number;
 }
 
 export interface Session {
+    /** The user's Spotify access token. This is used to authenticate requests to the Spotify API */
     accessToken: string;
 }
 

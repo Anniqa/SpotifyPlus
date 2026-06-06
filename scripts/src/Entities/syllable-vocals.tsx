@@ -3,6 +3,7 @@ import { View, Text, HorizontalStackLayout, CommonViewProps, NativeView } from '
 import { SyllableVocalSet } from '../Types/lyrics-types'
 import SyllableView from './syllable';
 import Spline from 'typescript-cubic-spline';
+import { SpotifyPlus } from 'spotifyplus';
 
 interface Props extends CommonViewProps {
     metadata: SyllableVocalSet;
@@ -141,7 +142,7 @@ const SyllableVocalLine = ({ metadata }: Props) => {
     const backgroundWords = useMemo(() => groupSyllablesInWords(backgroundSyllables ?? []), [backgroundSyllables]);
 
     return (
-        <View style={metadata.OppositeAligned ? { flex: 1, paddingTop: 42, paddingRight: 25, paddingLeft: 35, alignItems: 'flex-end', textAlign: 'right' } : { flex: 1, paddingLeft: 25, paddingTop: 42, paddingRight: 35 }}>
+        <View style={metadata.OppositeAligned ? { flex: 1, paddingRight: 25, paddingLeft: 35, alignItems: 'flex-end', textAlign: 'right' } : { flex: 1, paddingLeft: 25, paddingRight: 35 }}>
             <View style={{ flex: 1, flexWrap: 'wrap', flexDirection: 'row' }}>
                 {leadWords.map((word, index) => (
                     <View key={index} style={{ flexDirection: 'row' }}>

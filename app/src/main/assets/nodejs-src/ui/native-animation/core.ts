@@ -68,6 +68,7 @@ export type AnimatedPropsPayload<T extends Record<string, any> = Record<string, 
 };
 
 export type NativeAnimatedNodeLike<T = any> = AnimatedExpression<T> | SharedValue<T> | DerivedValue<T>;
+export type AnimatedResolvedValue<T> = T extends AnimatedExpression<infer U> ? AnimatedResolvedValue<U> : T;
 
 export type AnimationDescriptor<T = any> = {
     readonly __spotifyPlusAnimation: true;
@@ -114,8 +115,8 @@ export class SharedValue<T = any> extends AnimatedExpression<T> {
         this.current = initial;
     }
 
-    get value(): AnimatedExpression<T> {
-        return new AnimatedExpression<T>({ $a: "value", id: this.id, initial: normalizeStatic(this.current) });
+    get value(): T {
+        return new AnimatedExpression<T>({ $a: "value", id: this.id, initial: normalizeStatic(this.current) }) as unknown as T;
     }
 
     set value(next: T | AnimationDescriptor<T> | AnimatedExpression<T>) {
@@ -143,8 +144,8 @@ export class DerivedValue<T = any> extends AnimatedExpression<T> {
         super({ $a: "derived", id, expr });
     }
 
-    get value(): AnimatedExpression<T> {
-        return this;
+    get value(): T {
+        return this as unknown as T;
     }
 }
 
@@ -162,7 +163,7 @@ function resolveAssignedValue(value: unknown): unknown {
 }
 
 export function serializeAnimatedNode(value: unknown): any {
-    if (value instanceof SharedValue) return value.value.node;
+    if (value instanceof SharedValue) return value.node;
     if (value instanceof AnimatedExpression) return value.node;
     if (Array.isArray(value)) return value.map(serializeAnimatedNode);
     if (isPlainObject(value)) {
@@ -187,11 +188,11 @@ export function useSharedValue<T = number>(initial: T): SharedValue<T> {
     return ref.current;
 }
 
-export function useDerivedValue<T = any>(factory: () => T, deps?: React.DependencyList): DerivedValue<T> {
+export function useDerivedValue<T = any>(factory: () => T, deps?: React.DependencyList): DerivedValue<AnimatedResolvedValue<T>> {
     const idRef = React.useRef<number>(0);
     if (idRef.current === 0) idRef.current = createAnimatedId();
     const serialized = React.useMemo(() => valueExpr(factory()), deps ?? []);
-    return React.useMemo(() => new DerivedValue<T>(idRef.current, serialized), [serialized]);
+    return React.useMemo(() => new DerivedValue<AnimatedResolvedValue<T>>(idRef.current, serialized), [serialized]);
 }
 
 export function useAnimatedStyle<T extends Record<string, any>>(factory: () => T, deps?: React.DependencyList): AnimatedStylePayload<T> {

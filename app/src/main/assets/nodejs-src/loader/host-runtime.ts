@@ -84,7 +84,7 @@ export class HostRuntime {
         return this.bridge.getTrack(uri);
     }
 
-    async getProgress(): Promise<number | null> {
+    getProgress(): number {
         return this.bridge.getPlaybackPosition();
     }
 

@@ -18,7 +18,11 @@ import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.*;
 
 import java.lang.reflect.*;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @XposedHooker
 public class PlayerHook extends SpotifyHook {
@@ -26,6 +30,7 @@ public class PlayerHook extends SpotifyHook {
     private Object seekInstance = null;
     private Constructor<?> ctor;
     private Constructor<?> seekConstructor;
+    private List<Constructor<?>> seekConstructors;
 
     // Play/Pause
     private static volatile Object controller;
@@ -73,8 +78,10 @@ public class PlayerHook extends SpotifyHook {
                 .add(FieldMatcher.create().modifiers(Modifier.PUBLIC | Modifier.FINAL).type(boolean.class))
         ))).get(0).getInstance(classLoader);
 
-        seekConstructor = seek.getDeclaredConstructors()[0];
-        hook(seekConstructor);
+        seekConstructors = Arrays.stream(seek.getConstructors()).collect(Collectors.toList());
+        seekConstructors.forEach(this::hook);
+        //        seekConstructor = seek.getConstructors()[3];
+//        hook(seekConstructor);
 
         // Play/Pause
         Class<?> hid0Class = findClass("p.hid0");
@@ -185,10 +192,11 @@ public class PlayerHook extends SpotifyHook {
     protected void afterHook(SpotifyCallback callback) {
         Member member = callback.getMember();
 
-        // Seek
-        if (member == seekConstructor) {
+        if(member == seekConstructor) {
+            log("Seek constructor was called!");
             seekInstance = callback.getThisObject();
-        } else if (member == l6r0Ctor) {
+        }
+        if (member == l6r0Ctor) {
             // Skip
             Object thisObject = callback.getThisObject();
             if (thisObject == null) return;

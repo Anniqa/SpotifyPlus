@@ -9,8 +9,8 @@ interface Props extends CommonViewProps {
     emphasized: boolean;
     isBackground?: boolean;
     scaleSpline: Spline;
-    glowSpline: Spline;
     yOffsetSpline: Spline;
+    glowSpline: Spline;
 }
 
 const Tau = Math.PI * 2;

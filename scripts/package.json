@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "dependencies": {
         "cubic-spline": "^3.0.3",
+        "curve-interpolator": "^3.3.1",
         "d3-ease": "^3.0.1",
         "esbuild": "^0.28.0",
         "franc": "^6.2.0",

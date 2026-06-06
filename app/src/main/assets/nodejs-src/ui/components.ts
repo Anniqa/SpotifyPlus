@@ -31,6 +31,15 @@ export type SizeValue =
     | `${number}%`
     | "auto";
 export type ColorValue = string | number;
+export type ViewShadow = {
+    shadowColor?: AnimatedStyleValue<ColorValue>;
+    shadowOpacity?: AnimatedStyleValue<number>;
+    shadowRadius?: AnimatedStyleValue<SizeValue>;
+    shadowOffset?: {
+        width?: AnimatedStyleValue<SizeValue>;
+        height?: AnimatedStyleValue<SizeValue>;
+    };
+};
 export type VisibilityValue = "visible" | "invisible" | "gone";
 export type DisplayValue = "flex" | "none";
 export type FlexDirectionValue =
@@ -286,7 +295,9 @@ export interface TextStyle extends LayoutStyle, TransformStyle {
     textShadowRadius?: SizeValue;
 }
 
-export interface ViewStyle extends LayoutStyle, TransformStyle { }
+export interface ViewStyle extends LayoutStyle, TransformStyle {
+    shadow?: ViewShadow;
+}
 
 export interface RelativeLayoutRuleProps {
     alignParentTop?: boolean;
@@ -356,6 +367,7 @@ export interface CommonViewProps extends RelativeLayoutRuleProps {
     translateX?: AnimatedStyleValue<SizeValue>;
     translateY?: AnimatedStyleValue<SizeValue>;
     translateZ?: AnimatedStyleValue<SizeValue>;
+    shadow?: ViewShadow;
     accessibilityLabel?: string;
     contentDescription?: string;
     testID?: string;

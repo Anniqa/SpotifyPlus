@@ -45,38 +45,118 @@ export interface SpotifyPlusApi {
     openUri(uri: string): void;
     emit(eventName: string, payload?: unknown): void;
 
+    /** Interacts with the user's device */
     Platform: {
+        /** Contains information about the user's device and the current Spotify version */
         PlatformData: PlatformData;
+        /** Contains information about the user's current Spotify session */
         Session: Session;
+        /** Interacts with your script's storage and preferences */
         Storage: {
+            /**
+             * Sets a value in your script's preferences. This is useful to save settings and preferences
+             * @param key Key to set
+             * @param value Value to set. Can by any type
+             */
             set(key: string, value: any): void;
+            /**
+             * Gets a value from your script's preferences
+             * @param key Key to get
+             * @async
+             */
             get<T = any>(key: string): Promise<T | null>;
+            /**
+             * Removes a key from your script's preferences
+             * @param key Key to remove
+             */
             remove(key: string): void;
 
+            /**
+             * Writes JSON data to the user's device storage
+             * @param path Path of the file to write
+             * @param value JSON data to write
+             */
             write(path: string, value: string): void;
+            /**
+             * Serializes an object, and writes the data to the user's device storage
+             * @param path Path of the file to write
+             * @param value Data to write
+             */
             write<T = any>(path: string, value: T): void;
+            /**
+             * Write's binary data to the user's device storage
+             * @param path Path of the file to write
+             * @param data Binary data to write
+             */
             write(path: string, data: Uint8Array | ArrayBuffer): void;
 
+            /**
+             * Reads data from the user's device storage
+             * @param path Path of the file to read
+             * @async
+             */
             read<T = any>(path: string): Promise<T | string | Uint8Array | null>;
         }
     }
 
+    /** Make internal Spotify API requests */
     Internal: {
+        /**
+         * Gets information about a track
+         * @param uri The URI of the song
+         * @async
+         */
         getTrack(uri: string): Promise<SpotifyTrack | null>;
     }
 
+    /** Interacts with the Spotify player */
     Player: {
+        /**
+         * Gets the current track
+         * 
+         * Not all information is available when using this method.
+         * 
+         * Artists will always contain one element containing just the main artists
+         * 
+         * Explicit will always return false
+         * 
+         * Refer to the documentation at https://www.spotifyplus.dev/docs/script-basics/player for more information
+         */
         getCurrentTrack(): SpotifyTrack;
-        getProgress(): Promise<number | null>;
+        /** Gets the current playback position in milliseconds */
+        getProgress(): number;
+        /**
+         * Skips to a given position in the song
+         * @param position The position in the song to skip to in milliseconds
+         */
         seek(position: number): void;
+        /** Resumes playback of the current song */
         play(): void;
+        /** Pauses playback of the current song */
         pause(): void;
+        /** Toggles playback of the current song */
         togglePlay(): void;
+        /** 
+         * Skips to the next song in the queue 
+         * 
+         * This will only work after the user opens the now playing view once
+         * */
         skipNext(): void;
+        /**
+         * Skips to the beginning of the track or the previous song in the queue
+         * 
+         * This will only work after the user opens the now playing view once
+         */
         skipPrevious(): void;
     }
 
+    /** Create custom UI using React */
     Surfaces: {
+        /**
+         * Register your React component inside of Spotify
+         * @param surfaceType The surface that should trigger your React component to appear
+         * @param renderer I honestly don't know what this is for
+         */
         register(surfaceType: string, renderer: SurfaceRenderer<any>): void;
     }
 

@@ -116,6 +116,7 @@ public class ScriptViewHost {
     private final Map<View, RenderNode> nodesByView = new IdentityHashMap<>();
     private final Map<Integer, TextWatcher> textWatchers = new HashMap<>();
     private final Set<Integer> suppressedEventNodes = new HashSet<>();
+    private final Set<Integer> pressedTouchNodes = new HashSet<>();
     private final Map<ImageView, String> appliedImageSources = new WeakHashMap<>();
     private final Map<ImageView, Integer> imageRequestIds = new WeakHashMap<>();
     private final Map<Integer, Animator> runningNativeAnimations = new HashMap<>();
@@ -2661,15 +2662,13 @@ public class ScriptViewHost {
         if (onPressInEventId != null || onPressOutEventId != null) {
             view.setClickable(true);
             view.setOnTouchListener(new View.OnTouchListener() {
-                private boolean pressed = false;
-
                 @Override
                 public boolean onTouch(View v, android.view.MotionEvent event) {
                     if (isDispatchSuppressed(node.id)) return false;
                     try {
                         int action = event.getActionMasked();
                         if (action == android.view.MotionEvent.ACTION_DOWN) {
-                            pressed = true;
+                            pressedTouchNodes.add(node.id);
                             if (onPressInEventId != null) {
                                 JSONObject payload = basePayload(node.id);
                                 payload.put("x", event.getX());
@@ -2679,7 +2678,8 @@ public class ScriptViewHost {
                                 sendEventToNode(node.id, "onPressIn", onPressInEventId, payload);
                             }
                         } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
-                            if (pressed && onPressOutEventId != null) {
+                            boolean wasPressed = pressedTouchNodes.remove(node.id);
+                            if (wasPressed && onPressOutEventId != null) {
                                 JSONObject payload = basePayload(node.id);
                                 payload.put("x", event.getX());
                                 payload.put("y", event.getY());
@@ -2687,11 +2687,11 @@ public class ScriptViewHost {
                                 payload.put("pageY", event.getRawY());
                                 sendEventToNode(node.id, "onPressOut", onPressOutEventId, payload);
                             }
-                            pressed = false;
+                            if (wasPressed && action == android.view.MotionEvent.ACTION_UP) v.performClick();
                         }
                     } catch (Exception ignored) {
                     }
-                    return false;
+                    return true;
                 }
             });
         } else {
@@ -2947,6 +2947,8 @@ public class ScriptViewHost {
             view.setTranslationZ(parseYogaPoint(props.opt("translationZ"), Math.round(view.getTranslationZ())));
         if (props.has("elevation"))
             view.setElevation(parseYogaPoint(props.opt("elevation"), Math.round(view.getElevation())));
+        if (props.has("shadow"))
+            applyViewShadowProps(view, props.opt("shadow"));
         if (props.has("minimumWidth"))
             view.setMinimumWidth(parseYogaPoint(props.opt("minimumWidth"), view.getMinimumWidth()));
         if (props.has("minimumHeight"))
@@ -2986,6 +2988,32 @@ public class ScriptViewHost {
         }
         if (borderWidth > 0) drawable.setStroke(borderWidth, borderColor != null ? borderColor : Color.TRANSPARENT);
         view.setBackground(drawable);
+    }
+
+    private void applyViewShadowProps(View view, Object rawShadow) {
+        if (!(rawShadow instanceof JSONObject shadow)) {
+            view.setElevation(0);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                view.setOutlineAmbientShadowColor(Color.BLACK);
+                view.setOutlineSpotShadowColor(Color.BLACK);
+            }
+            return;
+        }
+
+        float radius = parseYogaPoint(shadow.opt("shadowRadius"), Math.round(view.getElevation()));
+        JSONObject offset = shadow.optJSONObject("shadowOffset");
+        float offsetHeight = offset != null ? parseYogaPoint(offset.opt("height"), 0) : 0;
+        double opacity = Math.max(0, Math.min(1, parseDouble(shadow.opt("shadowOpacity"), 1)));
+        Integer parsedColor = parseColor(shadow.opt("shadowColor"));
+        int color = parsedColor != null ? parsedColor : Color.BLACK;
+        int alpha = Math.round(Color.alpha(color) * (float) opacity);
+        int shadowColor = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
+
+        view.setElevation(opacity <= 0 ? 0 : Math.max(0, radius + Math.max(0, offsetHeight)));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            view.setOutlineAmbientShadowColor(shadowColor);
+            view.setOutlineSpotShadowColor(shadowColor);
+        }
     }
 
     private void applyPadding(View view, JSONObject props) {
@@ -3365,6 +3393,7 @@ public class ScriptViewHost {
 
     private void cleanupNodeListeners(RenderNode node) {
         suppressedEventNodes.remove(node.id);
+        pressedTouchNodes.remove(node.id);
         lastNativeEditTextValues.remove(node.id);
         activelyDraggingSeekBars.remove(node.id);
         lastNativeSeekBarValues.remove(node.id);
@@ -4062,6 +4091,7 @@ public class ScriptViewHost {
         final RenderNode node;
         final LinearLayoutManager layoutManager;
         final VirtualizedAdapter adapter;
+        final VirtualizedItemSpacingDecoration spacingDecoration;
         final Map<Integer, RenderNode> cellsByIndex = new HashMap<>();
         final Map<Integer, FrameLayout> holdersByIndex = new HashMap<>();
         int itemCount = 0;
@@ -4069,6 +4099,9 @@ public class ScriptViewHost {
         int initialNumToRender = 10;
         int windowSize = 5;
         int initialScrollIndex = -1;
+        int rowGap = 0;
+        int columnGap = 0;
+        boolean horizontal = false;
         int visibleRangeEventId = -1;
         int scrollEventId = -1;
         int lastFirst = -1;
@@ -4083,8 +4116,10 @@ public class ScriptViewHost {
             this.node = node;
             this.layoutManager = new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false);
             this.adapter = new VirtualizedAdapter(this);
+            this.spacingDecoration = new VirtualizedItemSpacingDecoration(this);
             setLayoutManager(layoutManager);
             setAdapter(adapter);
+            addItemDecoration(spacingDecoration);
             setClipChildren(true);
             setClipToPadding(true);
             addOnScrollListener(new OnScrollListener() {
@@ -4102,13 +4137,28 @@ public class ScriptViewHost {
             int nextInitialNum = Math.max(1, props.optInt("initialNumToRender", initialNumToRender));
             int nextWindowSize = Math.max(1, props.optInt("windowSize", windowSize));
             int nextInitialIndex = props.has("initialScrollIndex") ? Math.max(0, props.optInt("initialScrollIndex", 0)) : -1;
+            int fallbackGap = Math.max(0, host.parseYogaPoint(props.opt("gap"), 0));
+            int nextRowGap = Math.max(0, host.parseYogaPoint(props.opt("rowGap"), fallbackGap));
+            int nextColumnGap = Math.max(0, host.parseYogaPoint(props.opt("columnGap"), fallbackGap));
+            boolean nextHorizontal = props.has("horizontal") ? host.parseBoolean(props.opt("horizontal"), horizontal) : horizontal;
 
             boolean countChanged = nextCount != itemCount;
+            boolean gapChanged = nextRowGap != rowGap || nextColumnGap != columnGap;
+            boolean orientationChanged = nextHorizontal != horizontal;
             itemCount = nextCount;
             estimatedItemSize = nextEstimated;
             initialNumToRender = nextInitialNum;
             windowSize = nextWindowSize;
             initialScrollIndex = nextInitialIndex;
+            rowGap = nextRowGap;
+            columnGap = nextColumnGap;
+            horizontal = nextHorizontal;
+            if (orientationChanged) {
+                layoutManager.setOrientation(horizontal ? LinearLayoutManager.HORIZONTAL : LinearLayoutManager.VERTICAL);
+                lastFirst = -1;
+                lastLast = -1;
+            }
+            if (gapChanged || orientationChanged) invalidateItemDecorations();
             if (countChanged) adapter.notifyDataSetChanged();
             if (!initialScrollApplied && initialScrollIndex >= 0) {
                 post(() -> {
@@ -4183,7 +4233,8 @@ public class ScriptViewHost {
 
         void scrollToIndex(int index, boolean animated, int viewOffset, float viewPosition) {
             int safeIndex = Math.max(0, Math.min(index, Math.max(0, itemCount - 1)));
-            int viewportOffset = Math.round(Math.max(0, getHeight()) * viewPosition) + viewOffset;
+            int viewportSize = horizontal ? getWidth() : getHeight();
+            int viewportOffset = Math.round(Math.max(0, viewportSize) * viewPosition) + viewOffset;
             if (animated) {
                 LinearSmoothScroller smoothScroller = new LinearSmoothScroller(getContext()) {
                     @Override
@@ -4200,15 +4251,24 @@ public class ScriptViewHost {
         }
 
         void scrollToOffset(int offset, boolean animated) {
-            int current = computeVerticalScrollOffset();
+            int current = horizontal ? computeHorizontalScrollOffset() : computeVerticalScrollOffset();
             int delta = Math.max(0, offset) - current;
-            if (animated) smoothScrollBy(0, delta);
-            else scrollBy(0, delta);
+            if (animated) {
+                if (horizontal) smoothScrollBy(delta, 0);
+                else smoothScrollBy(0, delta);
+            } else {
+                if (horizontal) scrollBy(delta, 0);
+                else scrollBy(0, delta);
+            }
             post(this::dispatchVisibleRangeIfNeeded);
         }
 
         void flashScrollIndicators() {
             awakenScrollBars();
+        }
+
+        int getMainAxisGap() {
+            return horizontal ? columnGap : rowGap;
         }
 
         void dispatchScroll(int dx, int dy) {
@@ -4251,6 +4311,24 @@ public class ScriptViewHost {
                 payload.put("visibleLast", visibleLast);
                 host.sendEventToNode(node.id, "onVisibleRangeChange", visibleRangeEventId, payload);
             } catch (Exception ignored) {
+            }
+        }
+
+        static class VirtualizedItemSpacingDecoration extends RecyclerView.ItemDecoration {
+            final YogaVirtualizedList owner;
+
+            VirtualizedItemSpacingDecoration(YogaVirtualizedList owner) {
+                this.owner = owner;
+            }
+
+            @Override
+            public void getItemOffsets(android.graphics.Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
+                int position = parent.getChildAdapterPosition(view);
+                int last = Math.max(0, owner.getItemCount() - 1);
+                int gap = owner.getMainAxisGap();
+                if (gap <= 0 || position == RecyclerView.NO_POSITION || position >= last) return;
+                if (owner.horizontal) outRect.right = gap;
+                else outRect.bottom = gap;
             }
         }
 
@@ -5015,5 +5093,6 @@ public class ScriptViewHost {
         nodesByView.clear();
         textWatchers.clear();
         suppressedEventNodes.clear();
+        pressedTouchNodes.clear();
     }
 }
