@@ -729,13 +729,21 @@ public class AnimatedBackgroundView extends View {
     }
 
     private void fastBoxBlurOpaque(Bitmap srcDst, int radius, int passes) {
+        if (srcDst == null || srcDst.isRecycled()) return;
         if (blurBufA == null || blurBufA.length < offW * offH) return;
-        srcDst.getPixels(blurBufA, 0, offW, 0, 0, offW, offH);
-        for (int i = 0; i < passes; i++) {
-            boxBlurHorizontal(blurBufA, blurBufB, offW, offH, radius);
-            boxBlurVertical(blurBufB, blurBufA, offW, offH, radius);
+        try {
+            srcDst.getPixels(blurBufA, 0, offW, 0, 0, offW, offH);
+            for (int i = 0; i < passes; i++) {
+                boxBlurHorizontal(blurBufA, blurBufB, offW, offH, radius);
+                boxBlurVertical(blurBufB, blurBufA, offW, offH, radius);
+            }
+            if (!srcDst.isRecycled()) {
+                srcDst.setPixels(blurBufA, 0, offW, 0, 0, offW, offH);
+            }
+        } catch (IllegalStateException ignored) {
+            // The view can be detached while the FluidBG thread is rendering.
+            // Dropping one cosmetic frame is better than crashing Spotify.
         }
-        srcDst.setPixels(blurBufA, 0, offW, 0, 0, offW, offH);
     }
 
     private static void boxBlurHorizontal(int[] src, int[] dst, int w, int h, int r) {
