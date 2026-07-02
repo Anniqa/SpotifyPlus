@@ -782,12 +782,22 @@ public class RemoveCreateButtonHook extends SpotifyHook {
 
                                 String sliderValueThing = prefs.getString("line_spacing", "default");
                                 switch(sliderValueThing) {
-                                    case "compact": slider.setValue(0);
-                                    case "default": slider.setValue(1);
-                                    case "spacious": slider.setValue(2);
-                                    case "more": slider.setValue(3);
-                                    case "max": slider.setValue(4);
-                                    default: slider.setValue(1);
+                                    case "compact":
+                                        slider.setValue(0);
+                                        break;
+                                    case "spacious":
+                                        slider.setValue(2);
+                                        break;
+                                    case "more":
+                                        slider.setValue(3);
+                                        break;
+                                    case "max":
+                                        slider.setValue(4);
+                                        break;
+                                    case "default":
+                                    default:
+                                        slider.setValue(1);
+                                        break;
                                 }
 
                                 MaterialSwitch background = view.findViewById(R.id.switch_enable_background);

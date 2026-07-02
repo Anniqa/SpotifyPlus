@@ -18,14 +18,31 @@ public class NetworkHook extends SpotifyHook {
         SharedPreferences prefs = context.getSharedPreferences("SpotifyPlus", Context.MODE_PRIVATE);
 
         if (prefs.getBoolean("block_ads", false)) {
-            XposedBridge.hookAllConstructors(XposedHelpers.findClass("okhttp3.Request", lpparm.classLoader), new XC_MethodHook() {
+            Class<?> requestClass = XposedHelpers.findClassIfExists("okhttp3.Request", lpparm.classLoader);
+            Class<?> httpUrlClass = XposedHelpers.findClassIfExists("okhttp3.HttpUrl", lpparm.classLoader);
+            if (requestClass == null || httpUrlClass == null) {
+                XposedBridge.log("[SpotifyPlus] NetworkHook disabled: OkHttp classes not found");
+                return;
+            }
+
+            XposedBridge.hookAllConstructors(requestClass, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                    String url = param.args[0].toString();
+                    try {
+                        if (param.args == null || param.args.length == 0 || param.args[0] == null) return;
 
-                    //  || url.contains("gabo-receiver-service") || url.contains("net-fortune") || url.contains("darwin-experiments") || url.contains("speechless-sharing") || url.contains("pendragon")
-                    if (url.contains("/ads")) {
-                        param.args[0] = XposedHelpers.callMethod(XposedHelpers.getStaticObjectField(XposedHelpers.findClass("okhttp3.HttpUrl", lpparm.classLoader), "k"), "c", "http://127.0.0.1:404/");
+                        String url = param.args[0].toString();
+
+                        //  || url.contains("gabo-receiver-service") || url.contains("net-fortune") || url.contains("darwin-experiments") || url.contains("speechless-sharing") || url.contains("pendragon")
+                        if (url.contains("/ads")) {
+                            Object companion = XposedHelpers.getStaticObjectField(httpUrlClass, "k");
+                            if (companion != null) {
+                                param.args[0] = XposedHelpers.callMethod(companion, "c", "http://127.0.0.1:404/");
+                            }
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log("[SpotifyPlus] NetworkHook request rewrite skipped after error");
+                        XposedBridge.log(t);
                     }
                 }
             });

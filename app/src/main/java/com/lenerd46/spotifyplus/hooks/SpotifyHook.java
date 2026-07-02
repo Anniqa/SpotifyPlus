@@ -1,5 +1,6 @@
 package com.lenerd46.spotifyplus.hooks;
 
+import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import org.luckypray.dexkit.DexKitBridge;
 
@@ -10,7 +11,12 @@ public abstract class SpotifyHook {
     public void init(XC_LoadPackage.LoadPackageParam lpparm, DexKitBridge bridge) {
         this.lpparm = lpparm;
         this.bridge = bridge;
-        hook();
+        try {
+            hook();
+        } catch (Throwable t) {
+            XposedBridge.log("[SpotifyPlus] Disabled hook " + getClass().getSimpleName() + " after init failure");
+            XposedBridge.log(t);
+        }
     }
 
     protected abstract void hook();
