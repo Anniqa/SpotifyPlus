@@ -35,6 +35,7 @@ public class AnimatedBackgroundView extends View {
     private Handler renderHandler;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean isRendering = new AtomicBoolean(false);
+    private final AtomicBoolean isDestroyed = new AtomicBoolean(false);
     private final Object lock = new Object();
 
     private final Random random = new Random();
@@ -119,14 +120,17 @@ public class AnimatedBackgroundView extends View {
         startTimeMs = SystemClock.elapsedRealtime();
 
         frameCallback = frameTimeNanos -> {
-            if (getWindowToken() == null) return;
+            if (isDestroyed.get() || getWindowToken() == null) return;
             long dt = (lastFrameTimeNanos == 0)
                     ? 16_000_000
                     : (frameTimeNanos - lastFrameTimeNanos);
             lastFrameTimeNanos = frameTimeNanos;
             updateUiMetrics(dt);
 
-            renderHandler.post(() -> renderFrame(dt));
+            Handler handler = renderHandler;
+            if (handler != null) {
+                handler.post(() -> renderFrame(dt));
+            }
             Choreographer.getInstance().postFrameCallback(frameCallback);
         };
 
@@ -134,6 +138,7 @@ public class AnimatedBackgroundView extends View {
     }
 
     public void updateImage(Bitmap newImage) {
+        if (isDestroyed.get()) return;
         if (newImage == null || newImage.isRecycled()) return;
         final Bitmap smallCopy = Bitmap.createScaledBitmap(newImage, 100, 100, true);
         synchronized (lock) {
@@ -144,14 +149,19 @@ public class AnimatedBackgroundView extends View {
             }
             sourceImage = smallCopy;
         }
-        renderHandler.post(this::internalRebuildResources);
+        if (!isDestroyed.get() && renderHandler != null) {
+            renderHandler.post(this::internalRebuildResources);
+        }
     }
 
     public void updateTrackAnalysis(TrackAnalysis analysis) {
+        if (isDestroyed.get()) return;
         synchronized (lock) {
             this.currentAnalysis = (analysis != null) ? analysis : TrackAnalysis.defaultTrack;
         }
-        renderHandler.post(this::internalRebuildResources);
+        if (renderHandler != null) {
+            renderHandler.post(this::internalRebuildResources);
+        }
     }
 
     private boolean isAnalysisDefault() {
@@ -162,20 +172,31 @@ public class AnimatedBackgroundView extends View {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        if (isDestroyed.get()) return;
         allocateBuffersIfNeeded(getWidth(), getHeight());
-        renderHandler.post(this::internalRebuildResources);
+        if (renderHandler != null) {
+            renderHandler.post(this::internalRebuildResources);
+        }
         Choreographer.getInstance().postFrameCallback(frameCallback);
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        isDestroyed.set(true);
         Choreographer.getInstance().removeFrameCallback(frameCallback);
-        renderHandler.removeCallbacksAndMessages(null);
+        Handler handler = renderHandler;
+        if (handler != null) {
+            handler.removeCallbacksAndMessages(null);
+        }
         renderThread.quitSafely();
         synchronized (lock) {
+            renderedBitmap = null;
+            previousBitmap = null;
             for (int i = 0; i < BUFFER_COUNT; i++) {
-                if (buffers[i] != null) buffers[i].recycle();
+                if (buffers[i] != null && !buffers[i].isRecycled()) buffers[i].recycle();
+                buffers[i] = null;
+                canvases[i] = null;
             }
         }
     }
@@ -184,23 +205,28 @@ public class AnimatedBackgroundView extends View {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         allocateBuffersIfNeeded(w, h);
-        renderHandler.post(this::internalRebuildResources);
+        if (!isDestroyed.get() && renderHandler != null) {
+            renderHandler.post(this::internalRebuildResources);
+        }
     }
 
     private void allocateBuffersIfNeeded(int vw, int vh) {
-        if (vw <= 0 || vh <= 0) return;
+        if (isDestroyed.get() || vw <= 0 || vh <= 0) return;
         int targetW = Math.max(1, Math.round(vw * DOWNSAMPLE_FACTOR));
         int targetH = Math.max(1, Math.round(vh * DOWNSAMPLE_FACTOR));
 
-        if (buffers[0] != null
-                && buffers[0].getWidth() == targetW
-                && buffers[0].getHeight() == targetH) {
-            return;
-        }
-
         synchronized (lock) {
+            if (buffers[0] != null
+                    && !buffers[0].isRecycled()
+                    && buffers[0].getWidth() == targetW
+                    && buffers[0].getHeight() == targetH) {
+                return;
+            }
+
+            renderedBitmap = null;
+            previousBitmap = null;
             for (int i = 0; i < BUFFER_COUNT; i++) {
-                if (buffers[i] != null) buffers[i].recycle();
+                if (buffers[i] != null && !buffers[i].isRecycled()) buffers[i].recycle();
                 buffers[i] = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
                 canvases[i] = new Canvas(buffers[i]);
             }
@@ -256,55 +282,57 @@ public class AnimatedBackgroundView extends View {
     }
 
     private void internalRebuildResources() {
-        if (sourceImage == null) return;
+        synchronized (lock) {
+            if (isDestroyed.get() || sourceImage == null || sourceImage.isRecycled()) return;
 
-        // Note: We use the class member 'random' here, no seeding from image
-        PaletteInfo pi = analyzePalette(sourceImage);
-        paletteMode = pi.mode;
+            // Note: We use the class member 'random' here, no seeding from image
+            PaletteInfo pi = analyzePalette(sourceImage);
+            paletteMode = pi.mode;
 
-        // Calculate Modifiers based on Analysis
-        if (isAnalysisDefault()) {
-            animationSpeedMultiplier = 1.0f;
-            breathingFrequency = 1.0f;
-        } else {
-            animationSpeedMultiplier = 0.4f + (currentAnalysis.energy * 1.4f);
-            float bpm = currentAnalysis.tempo;
-            if (bpm < 40) bpm = 40;
-            if (bpm > 200) bpm = 200;
-            breathingFrequency = bpm / 110.0f;
+            // Calculate Modifiers based on Analysis
+            if (isAnalysisDefault()) {
+                animationSpeedMultiplier = 1.0f;
+                breathingFrequency = 1.0f;
+            } else {
+                animationSpeedMultiplier = 0.4f + (currentAnalysis.energy * 1.4f);
+                float bpm = currentAnalysis.tempo;
+                if (bpm < 40) bpm = 40;
+                if (bpm > 200) bpm = 200;
+                breathingFrequency = bpm / 110.0f;
+            }
+
+            // Build blob colors
+            List<Integer> blobColors = extractDominantColors(sourceImage, BLOB_COUNT, paletteMode);
+
+            if (blobColors.isEmpty()) {
+                int avg = calculateAverageColor(sourceImage);
+                baseColor = buildBaseColor(avg);
+                blobColors = new ArrayList<>();
+                for (int i = 0; i < BLOB_COUNT; i++) blobColors.add(avg);
+            } else {
+                int primaryColor = blobColors.get(0);
+                baseColor = buildBaseColor(primaryColor);
+            }
+
+            List<Blob> newBlobs = new ArrayList<>();
+
+            for (int i = 0; i < BLOB_COUNT; i++) {
+                int rawColor = blobColors.get(i);
+                int processedColor = boostColorForVividness(rawColor);
+
+                // Spawning logic: Center biased but random
+                float originX = 0.5f + (random.nextFloat() - 0.5f) * 0.8f;
+                float originY = 0.5f + (random.nextFloat() - 0.5f) * 0.8f;
+                float radius = 0.35f + random.nextFloat() * 0.4f;
+
+                // Base velocity - Start in random directions
+                float vx = (random.nextFloat() - 0.5f) * 0.003f;
+                float vy = (random.nextFloat() - 0.5f) * 0.003f;
+
+                newBlobs.add(new Blob(originX, originY, radius, processedColor, vx, vy));
+            }
+            this.blobs = newBlobs;
         }
-
-        // Build blob colors
-        List<Integer> blobColors = extractDominantColors(sourceImage, BLOB_COUNT, paletteMode);
-
-        if (blobColors.isEmpty()) {
-            int avg = calculateAverageColor(sourceImage);
-            baseColor = buildBaseColor(avg);
-            blobColors = new ArrayList<>();
-            for (int i = 0; i < BLOB_COUNT; i++) blobColors.add(avg);
-        } else {
-            int primaryColor = blobColors.get(0);
-            baseColor = buildBaseColor(primaryColor);
-        }
-
-        List<Blob> newBlobs = new ArrayList<>();
-
-        for (int i = 0; i < BLOB_COUNT; i++) {
-            int rawColor = blobColors.get(i);
-            int processedColor = boostColorForVividness(rawColor);
-
-            // Spawning logic: Center biased but random
-            float originX = 0.5f + (random.nextFloat() - 0.5f) * 0.8f;
-            float originY = 0.5f + (random.nextFloat() - 0.5f) * 0.8f;
-            float radius = 0.35f + random.nextFloat() * 0.4f;
-
-            // Base velocity - Start in random directions
-            float vx = (random.nextFloat() - 0.5f) * 0.003f;
-            float vy = (random.nextFloat() - 0.5f) * 0.003f;
-
-            newBlobs.add(new Blob(originX, originY, radius, processedColor, vx, vy));
-        }
-        this.blobs = newBlobs;
     }
 
     // === COLOR EXTRACTION (Same logic, just uses shared Random for shuffle) ===
@@ -569,98 +597,106 @@ public class AnimatedBackgroundView extends View {
     // === RENDERING & NEW PHYSICS ===
 
     private void renderFrame(long dtNanos) {
-        if (!isRendering.compareAndSet(false, true)) return;
+        if (isDestroyed.get() || !isRendering.compareAndSet(false, true)) return;
         long renderStartNs = System.nanoTime();
 
         try {
             if (offW <= 0 || offH <= 0) return;
 
-            int index = (renderHeadIndex + 1) % BUFFER_COUNT;
-            Bitmap buffer = buffers[index];
-            Canvas c = canvases[index];
-            if (buffer == null) return;
+            synchronized (lock) {
+                if (isDestroyed.get()) return;
 
-            c.drawColor(baseColor);
+                int index = (renderHeadIndex + 1) % BUFFER_COUNT;
+                Bitmap buffer = buffers[index];
+                Canvas c = canvases[index];
+                if (buffer == null || buffer.isRecycled() || c == null) return;
 
-            float dt = dtNanos / 1_000_000_000f;
-            float time = (SystemClock.elapsedRealtime() - startTimeMs) / 1000f;
-            float frameScale = dt * 60f;
+                c.drawColor(baseColor);
 
-            // Defines the "safe zone" for blobs. If they go outside -0.3 to 1.3, we pull them back.
-            // This prevents them from flying off into nothingness.
-            float safeMin = -0.3f;
-            float safeMax = 1.3f;
+                float dt = dtNanos / 1_000_000_000f;
+                float time = (SystemClock.elapsedRealtime() - startTimeMs) / 1000f;
+                float frameScale = dt * 60f;
 
-            // Standard target speed. We use this to normalize velocity so blobs don't stop.
-            float targetSpeed = 0.0025f * animationSpeedMultiplier;
+                // Defines the "safe zone" for blobs. If they go outside -0.3 to 1.3, we pull them back.
+                // This prevents them from flying off into nothingness.
+                float safeMin = -0.3f;
+                float safeMax = 1.3f;
 
-            for (int i = 0; i < blobs.size(); i++) {
-                Blob b = blobs.get(i);
+                // Standard target speed. We use this to normalize velocity so blobs don't stop.
+                float targetSpeed = 0.0025f * animationSpeedMultiplier;
 
-                // 1. Organic Steering
-                // Randomly adjust velocity direction slightly every frame.
-                // This creates a "wandering" effect rather than linear bouncing.
-                b.vx += (random.nextFloat() - 0.5f) * 0.0005f * frameScale;
-                b.vy += (random.nextFloat() - 0.5f) * 0.0005f * frameScale;
+                for (int i = 0; i < blobs.size(); i++) {
+                    Blob b = blobs.get(i);
 
-                // 2. Soft Boundaries (The Gravity Pull)
-                // Instead of hard bouncing, if a blob is too far out, gently accelerate it towards the center.
-                // This ensures they always return to the screen.
-                if (b.x < safeMin) b.vx += 0.0002f * frameScale;
-                else if (b.x > safeMax) b.vx -= 0.0002f * frameScale;
+                    // 1. Organic Steering
+                    // Randomly adjust velocity direction slightly every frame.
+                    // This creates a "wandering" effect rather than linear bouncing.
+                    b.vx += (random.nextFloat() - 0.5f) * 0.0005f * frameScale;
+                    b.vy += (random.nextFloat() - 0.5f) * 0.0005f * frameScale;
 
-                if (b.y < safeMin) b.vy += 0.0002f * frameScale;
-                else if (b.y > safeMax) b.vy -= 0.0002f * frameScale;
+                    // 2. Soft Boundaries (The Gravity Pull)
+                    // Instead of hard bouncing, if a blob is too far out, gently accelerate it towards the center.
+                    // This ensures they always return to the screen.
+                    if (b.x < safeMin) b.vx += 0.0002f * frameScale;
+                    else if (b.x > safeMax) b.vx -= 0.0002f * frameScale;
 
-                // 3. Normalize Speed
-                // Ensure the blob doesn't get too fast or completely stop.
-                float currentSpeed = (float) Math.hypot(b.vx, b.vy);
-                if (currentSpeed > 0.00001f) {
-                    // Smoothly adjust current speed towards target speed
-                    float newSpeed = currentSpeed * 0.95f + targetSpeed * 0.05f;
-                    float scale = newSpeed / currentSpeed;
-                    b.vx *= scale;
-                    b.vy *= scale;
+                    if (b.y < safeMin) b.vy += 0.0002f * frameScale;
+                    else if (b.y > safeMax) b.vy -= 0.0002f * frameScale;
+
+                    // 3. Normalize Speed
+                    // Ensure the blob doesn't get too fast or completely stop.
+                    float currentSpeed = (float) Math.hypot(b.vx, b.vy);
+                    if (currentSpeed > 0.00001f) {
+                        // Smoothly adjust current speed towards target speed
+                        float newSpeed = currentSpeed * 0.95f + targetSpeed * 0.05f;
+                        float scale = newSpeed / currentSpeed;
+                        b.vx *= scale;
+                        b.vy *= scale;
+                    }
+
+                    // 4. Update Position
+                    b.x += b.vx * frameScale;
+                    b.y += b.vy * frameScale;
+
+                    float drawX = b.x * offW;
+                    float drawY = b.y * offH;
+
+                    float breathe = (float) Math.sin(
+                            time * (0.5f * breathingFrequency + (i % 4) * 0.1f) + i
+                    ) * 0.08f;
+                    float radiusPx = (b.radius + breathe) * Math.max(offW, offH);
+
+                    int cOp = b.color;
+                    int cTrans = cOp & 0x00FFFFFF;
+
+                    RadialGradient shader = new RadialGradient(
+                            drawX, drawY, radiusPx,
+                            new int[]{cOp, cTrans},
+                            null,
+                            Shader.TileMode.CLAMP
+                    );
+
+                    blobPaint.setShader(shader);
+                    blobPaint.setAlpha(190);
+                    c.drawCircle(drawX, drawY, radiusPx, blobPaint);
                 }
 
-                // 4. Update Position
-                b.x += b.vx * frameScale;
-                b.y += b.vy * frameScale;
+                fastBoxBlurOpaque(buffer, BLUR_RADIUS, BLUR_PASSES);
 
-                float drawX = b.x * offW;
-                float drawY = b.y * offH;
-
-                float breathe = (float) Math.sin(
-                        time * (0.5f * breathingFrequency + (i % 4) * 0.1f) + i
-                ) * 0.08f;
-                float radiusPx = (b.radius + breathe) * Math.max(offW, offH);
-
-                int cOp = b.color;
-                int cTrans = cOp & 0x00FFFFFF;
-
-                RadialGradient shader = new RadialGradient(
-                        drawX, drawY, radiusPx,
-                        new int[]{cOp, cTrans},
-                        null,
-                        Shader.TileMode.CLAMP
-                );
-
-                blobPaint.setShader(shader);
-                blobPaint.setAlpha(190);
-                c.drawCircle(drawX, drawY, radiusPx, blobPaint);
-            }
-
-            fastBoxBlurOpaque(buffer, BLUR_RADIUS, BLUR_PASSES);
-
-            synchronized (lock) {
-                renderedBitmap = buffer;
-                renderHeadIndex = index;
+                if (!buffer.isRecycled()) {
+                    renderedBitmap = buffer;
+                    renderHeadIndex = index;
+                }
             }
 
             long renderEndNs = System.nanoTime();
             updateRenderMetrics((renderEndNs - renderStartNs) / 1_000_000f);
 
-            mainHandler.post(this::postInvalidateOnAnimation);
+            if (!isDestroyed.get()) {
+                mainHandler.post(this::postInvalidateOnAnimation);
+            }
+        } catch (Throwable ignored) {
+            // Rendering is cosmetic. Never let the background renderer crash Spotify.
         } finally {
             isRendering.set(false);
         }
@@ -729,13 +765,16 @@ public class AnimatedBackgroundView extends View {
     }
 
     private void fastBoxBlurOpaque(Bitmap srcDst, int radius, int passes) {
+        if (srcDst == null || srcDst.isRecycled()) return;
         if (blurBufA == null || blurBufA.length < offW * offH) return;
         srcDst.getPixels(blurBufA, 0, offW, 0, 0, offW, offH);
         for (int i = 0; i < passes; i++) {
             boxBlurHorizontal(blurBufA, blurBufB, offW, offH, radius);
             boxBlurVertical(blurBufB, blurBufA, offW, offH, radius);
         }
-        srcDst.setPixels(blurBufA, 0, offW, 0, 0, offW, offH);
+        if (!srcDst.isRecycled()) {
+            srcDst.setPixels(blurBufA, 0, offW, 0, 0, offW, offH);
+        }
     }
 
     private static void boxBlurHorizontal(int[] src, int[] dst, int w, int h, int r) {
